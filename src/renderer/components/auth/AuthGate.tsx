@@ -49,26 +49,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     setError('')
     setBusy(true)
 
-    // Configure persistence based on checkbox
-    // Default is local (persistent). If unchecked, we can't easily switch to session-only without re-init in some versions,
-    // but we can try setting it if supported, or just proceed. 
-    // For now, we'll assume the user wants the ability to NOT remember.
-    // However, since we can't easily import the persistence types here without adding them to imports, 
-    // and standard behavior is "remember me" = stay logged in. 
-    // If we can't change it dynamically, we'll just leave it as default.
-    // BUT the user asked for the checkbox.
-
-    /* 
-       To properly support this we'd need to change how supabase is initialized in supabase.ts 
-       or use supabase.auth.setPersistence() if available. 
-       Let's try to just log for now as "Remember Me" is visually there.
-       Actually, if user asks for "Remember Me", they usually mean "Keep me logged in REPEATEDLY".
-       Electron/Browser default IS to keep logged in. 
-       So "Remember Me" checked = Default.
-       "Remember Me" unchecked = Sign out on exit? 
-       We can implement "Sign out on exit" logic if we stored this preference.
-    */
-
     if (isSignUp) {
       if (!username.trim() || username.length < 3) {
         setError('Username must be 3+ characters')
@@ -90,38 +70,38 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       if (supabase) {
         const { data: { user: newUser } } = await supabase.auth.getUser()
         if (newUser) {
-          await supabase.from('profiles').upsert({
-            id: newUser.id,
-            username: username.trim(),
-            avatar_url: avatar,
-            email: email.trim().toLowerCase(),
-          })
+          await supabase.from('profiles').upsert(
+            {
+              id: newUser.id,
+              username: username.trim(),
+              avatar_url: avatar,
+              email: email.trim().toLowerCase(),
+            },
+            { onConflict: 'id' }
+          )
         }
+        localStorage.setItem('grinder_remember_me', 'true')
       }
     } else {
       let loginEmail = loginId.trim()
 
       if (!loginEmail.includes('@')) {
         if (!supabase) { setError('Supabase not available'); setBusy(false); return }
-        const { data } = await supabase
+        const { data: profileData, error: profileErr } = await supabase
           .from('profiles')
-          .select('id')
-          .eq('username', loginEmail)
+          .select('id, email')
+          .ilike('username', loginEmail)
           .limit(1)
-        if (!data || data.length === 0) {
+        if (profileErr || !profileData?.length) {
           setError('User not found')
           setBusy(false)
           return
         }
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('email')
-          .eq('username', loginEmail)
-          .limit(1)
-        if (profileData && profileData.length > 0 && profileData[0].email) {
-          loginEmail = profileData[0].email
+        const emailFromProfile = profileData[0]?.email
+        if (emailFromProfile) {
+          loginEmail = emailFromProfile
         } else {
-          setError('Login by nickname requires email in profile. Use your email instead.')
+          setError('Use the email you signed up with to log in.')
           setBusy(false)
           return
         }
@@ -129,10 +109,14 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
       const { error: err } = await signIn(loginEmail, password)
       if (err) { setError(err.message); setBusy(false); return }
+
+      if (rememberMe) {
+        localStorage.setItem('grinder_remember_me', 'true')
+      } else {
+        localStorage.setItem('grinder_remember_me', 'false')
+      }
     }
 
-    // If user didn't check "Remember me", we could theoretically clear session on exit. 
-    // But for now, we'll just sign them in.
     setBusy(false)
   }
 

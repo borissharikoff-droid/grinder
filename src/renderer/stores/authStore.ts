@@ -21,7 +21,12 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       return
     }
     supabase.auth.getSession().then(({ data: { session } }) => {
-      set({ user: session?.user ?? null, loading: false })
+      const rememberMe = typeof localStorage !== 'undefined' ? localStorage.getItem('grinder_remember_me') : null
+      if (session?.user && rememberMe === 'false') {
+        supabase.auth.signOut().then(() => set({ user: null, loading: false }))
+      } else {
+        set({ user: session?.user ?? null, loading: false })
+      }
     })
     supabase.auth.onAuthStateChange((_event, session) => {
       set({ user: session?.user ?? null })
