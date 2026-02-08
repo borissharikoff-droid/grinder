@@ -34,6 +34,9 @@ export const SKILLS: SkillDef[] = [
   { id: 'listener', name: 'Listener', icon: '🎵', color: '#1db954', category: 'music' },
 ]
 
+/** Max total skill level (all skills at 99). */
+export const MAX_TOTAL_SKILL_LEVEL = SKILLS.length * 99
+
 /** Category from tracker -> skill id. "other" falls back to researcher. */
 const CATEGORY_TO_SKILL: Record<string, string> = {
   coding: 'developer',

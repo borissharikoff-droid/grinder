@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 import type { FriendProfile } from '../../hooks/useFriends'
-import { getSkillById } from '../../lib/skills'
+import { getSkillById, MAX_TOTAL_SKILL_LEVEL } from '../../lib/skills'
 import { FRAMES, BADGES } from '../../lib/cosmetics'
 
 interface FriendListProps {
@@ -105,8 +105,7 @@ export function FriendList({ friends, onSelectFriend }: FriendListProps) {
                 <div className="flex items-center gap-1.5">
                   {f.is_online ? (
                     isLeveling ? (
-                      <span className="text-[11px] text-cyber-neon font-medium flex items-center gap-1">
-                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyber-neon animate-pulse" />
+                      <span className="text-[11px] text-gray-400 font-medium">
                         Leveling {levelingSkill}
                       </span>
                     ) : activityLabel ? (
@@ -145,10 +144,13 @@ export function FriendList({ friends, onSelectFriend }: FriendListProps) {
               )}
             </div>
 
-            {/* Streak + XP badge on right */}
-            <div className="shrink-0 text-right">
+            {/* Total skill lvl + streak + XP on right */}
+            <div className="shrink-0 text-right flex flex-col items-end gap-0.5">
+              <div className="text-[10px] text-gray-400 font-mono">
+                {(f.total_skill_level ?? 0)}/{MAX_TOTAL_SKILL_LEVEL}
+              </div>
               {f.streak_count > 0 && (
-                <div className="text-[10px] text-orange-400 font-mono mb-0.5">
+                <div className="text-[10px] text-orange-400 font-mono">
                   🔥 {f.streak_count}d
                 </div>
               )}

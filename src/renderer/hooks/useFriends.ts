@@ -27,6 +27,8 @@ export interface FriendProfile {
   equipped_frame?: string | null
   /** Top 3 skills by level (for badge display) */
   top_skills?: FriendSkill[]
+  /** Sum of all skill levels (for display e.g. 25/792) */
+  total_skill_level?: number
 }
 
 export interface PendingRequest {
@@ -111,8 +113,10 @@ export function useFriends() {
             skillsByUser.set(row.user_id, list)
           }
           friendList = friendList.map((p) => {
-            const list = (skillsByUser.get(p.id) || []).sort((a, b) => b.level - a.level).slice(0, 3)
-            return { ...p, top_skills: list }
+            const allSkills = skillsByUser.get(p.id) || []
+            const total_skill_level = allSkills.reduce((sum, s) => sum + s.level, 0)
+            const list = [...allSkills].sort((a, b) => b.level - a.level).slice(0, 3)
+            return { ...p, top_skills: list, total_skill_level }
           })
         } catch {
           // user_skills table may not exist yet
@@ -166,7 +170,7 @@ export function useFriends() {
   const acceptRequest = useCallback(async (friendshipId: string) => {
     if (!supabase) return
     await supabase.from('friendships').update({ status: 'accepted' }).eq('id', friendshipId)
-    fetchFriends()
+    await fetchFriends()
   }, [fetchFriends])
 
   const rejectRequest = useCallback(async (friendshipId: string) => {
@@ -193,6 +197,13 @@ export function useFriends() {
     return () => {
       supabase.removeChannel(channel)
     }
+  }, [user, fetchFriends])
+
+  // Poll presence/activity every 25s so updates show without switching tabs
+  useEffect(() => {
+    if (!user) return
+    const interval = setInterval(fetchFriends, 25_000)
+    return () => clearInterval(interval)
   }, [user, fetchFriends])
 
   return { friends, pendingRequests, loading, error, refresh: fetchFriends, acceptRequest, rejectRequest }
