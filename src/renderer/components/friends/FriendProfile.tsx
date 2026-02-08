@@ -49,8 +49,16 @@ export function FriendProfile({ profile, onBack, onCompare }: FriendProfileProps
   const badges = (profile.equipped_badges || [])
     .map(bId => BADGES.find(b => b.id === bId))
     .filter(Boolean)
-  const isLeveling = profile.is_online && profile.current_activity?.startsWith('Leveling ')
-  const levelingSkill = isLeveling ? profile.current_activity?.replace('Leveling ', '') : null
+  const parseActivity = (raw: string | null) => {
+    if (!raw) return { activityLabel: '', appName: null as string | null }
+    const sep = ' · '
+    const idx = raw.indexOf(sep)
+    if (idx >= 0) return { activityLabel: raw.slice(0, idx).trim(), appName: raw.slice(idx + sep.length).trim() || null }
+    return { activityLabel: raw, appName: null as string | null }
+  }
+  const { activityLabel, appName } = parseActivity(profile.current_activity ?? null)
+  const isLeveling = profile.is_online && activityLabel.startsWith('Leveling ')
+  const levelingSkill = isLeveling ? activityLabel.replace('Leveling ', '') : null
   const { current, needed } = xpProgressInLevel(profile.xp || 0)
   const xpPct = Math.min(100, (current / needed) * 100)
 
@@ -130,20 +138,25 @@ export function FriendProfile({ profile, onBack, onCompare }: FriendProfileProps
             )}
 
             {/* Status */}
-            <div className="flex items-center gap-1.5 mb-1.5">
-              {profile.is_online ? (
-                isLeveling ? (
-                  <span className="text-[11px] text-cyber-neon font-medium flex items-center gap-1">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyber-neon animate-pulse" />
-                    Leveling {levelingSkill}
-                  </span>
-                ) : profile.current_activity ? (
-                  <span className="text-[11px] text-blue-400">{profile.current_activity}</span>
+            <div className="flex flex-col gap-0.5 mb-1.5">
+              <div className="flex items-center gap-1.5">
+                {profile.is_online ? (
+                  isLeveling ? (
+                    <span className="text-[11px] text-cyber-neon font-medium flex items-center gap-1">
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyber-neon animate-pulse" />
+                      Leveling {levelingSkill}
+                    </span>
+                  ) : activityLabel ? (
+                    <span className="text-[11px] text-blue-400">{activityLabel}</span>
+                  ) : (
+                    <span className="text-[11px] text-cyber-neon">Online</span>
+                  )
                 ) : (
-                  <span className="text-[11px] text-cyber-neon">Online</span>
-                )
-              ) : (
-                <span className="text-[11px] text-gray-600">Offline</span>
+                  <span className="text-[11px] text-gray-600">Offline</span>
+                )}
+              </div>
+              {profile.is_online && appName && (
+                <span className="text-[10px] text-gray-500">в {appName}</span>
               )}
             </div>
 

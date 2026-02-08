@@ -35,7 +35,7 @@ export default function App() {
       return skill ? `Leveling ${skill.name}` : null
     })()
     : null
-  usePresenceSync(presenceLabel, status === 'running')
+  usePresenceSync(presenceLabel, status === 'running', currentActivity?.appName ?? null)
 
   useProfileSync()
   useKeyboardShortcuts()
@@ -89,7 +89,7 @@ export default function App() {
 
   return (
     <AuthGate>
-      <div className="flex flex-col h-full bg-discord-darker">
+      <div className="flex flex-col h-full bg-discord-darker overflow-x-hidden">
         <UpdateBanner />
         <main className="flex-1 overflow-auto">
           <AnimatePresence mode="wait">

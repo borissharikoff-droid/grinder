@@ -50,7 +50,7 @@ export function useProfileSync() {
   }, [user])
 }
 
-export function usePresenceSync(currentActivity: string | null, isSessionActive: boolean) {
+export function usePresenceSync(presenceLabel: string | null, isSessionActive: boolean, appName: string | null) {
   const { user } = useAuthStore()
 
   // Set online on mount, offline on unmount
@@ -71,14 +71,21 @@ export function usePresenceSync(currentActivity: string | null, isSessionActive:
     }
   }, [user])
 
-  // Update current activity
+  // Update current activity: "Leveling X" or "Leveling X · AppName" or just "AppName"
   useEffect(() => {
     if (!supabase || !user) return
-    const activity = isSessionActive && currentActivity ? currentActivity : null
+    let activity: string | null = null
+    if (isSessionActive) {
+      if (presenceLabel) {
+        activity = appName ? `${presenceLabel} · ${appName}` : presenceLabel
+      } else if (appName) {
+        activity = appName
+      }
+    }
     supabase.from('profiles').update({
       current_activity: activity,
       is_online: true,
       updated_at: new Date().toISOString(),
     }).eq('id', user.id).then(() => {})
-  }, [user, currentActivity, isSessionActive])
+  }, [user, presenceLabel, isSessionActive, appName])
 }

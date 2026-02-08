@@ -63,8 +63,8 @@ export function ProfileBar({ onNavigateProfile }: ProfileBarProps) {
 
   return (
     <div className={`flex flex-col items-center px-4 pt-3 pb-4 transition-opacity duration-150 ${loaded ? 'opacity-100' : 'opacity-0'}`}>
-      {/* Top row: avatar + info + sign out */}
-      <div className="flex items-center gap-2.5 w-full max-w-[260px]">
+      {/* Top row: avatar + info + sign out — overflow hidden so tooltips don't expand window */}
+      <div className="flex items-center gap-2.5 w-full max-w-[260px] min-w-0">
         {/* Avatar */}
         <button onClick={onNavigateProfile} className={`relative shrink-0 ${activeFrame ? `frame-style-${activeFrame.style}` : ''}`} title="Profile">
           {activeFrame && (
@@ -106,12 +106,12 @@ export function ProfileBar({ onNavigateProfile }: ProfileBarProps) {
             })}
 
             {persona && (
-              <div className="relative" onMouseEnter={() => setShowPersonaTooltip(true)} onMouseLeave={() => setShowPersonaTooltip(false)}>
+              <div className="relative shrink-0" onMouseEnter={() => setShowPersonaTooltip(true)} onMouseLeave={() => setShowPersonaTooltip(false)}>
                 <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-discord-card/80 border border-white/5 text-gray-400 cursor-default">
                   {persona.emoji}
                 </span>
                 {showPersonaTooltip && (
-                  <div className="absolute left-0 top-full mt-1.5 w-48 px-2.5 py-2 rounded-lg bg-discord-card border border-white/10 text-[10px] text-gray-300 z-20 shadow-xl">
+                  <div className="absolute right-0 top-full mt-1.5 w-44 max-w-[calc(100vw-2rem)] px-2.5 py-2 rounded-lg bg-discord-card border border-white/10 text-[10px] text-gray-300 z-20 shadow-xl pointer-events-none">
                     <p className="font-medium text-white">{persona.emoji} {persona.label}</p>
                     <p className="text-gray-500 mt-1 leading-relaxed break-words">
                       By activity. We analyze what you do and show your focus profile.

@@ -24,6 +24,16 @@ export function FriendList({ friends, onSelectFriend }: FriendListProps) {
     return (b.level || 1) - (a.level || 1)
   })
 
+  const parseActivity = (raw: string | null): { activityLabel: string; appName: string | null } => {
+    if (!raw) return { activityLabel: '', appName: null }
+    const sep = ' · '
+    const idx = raw.indexOf(sep)
+    if (idx >= 0) {
+      return { activityLabel: raw.slice(0, idx).trim(), appName: raw.slice(idx + sep.length).trim() || null }
+    }
+    return { activityLabel: raw, appName: null }
+  }
+
   return (
     <div className="space-y-2">
       {sorted.map((f, i) => {
@@ -31,8 +41,9 @@ export function FriendList({ friends, onSelectFriend }: FriendListProps) {
         const badges = (f.equipped_badges || [])
           .map(bId => BADGES.find(b => b.id === bId))
           .filter(Boolean)
-        const isLeveling = f.is_online && f.current_activity?.startsWith('Leveling ')
-        const levelingSkill = isLeveling ? f.current_activity?.replace('Leveling ', '') : null
+        const { activityLabel, appName } = parseActivity(f.current_activity ?? null)
+        const isLeveling = f.is_online && activityLabel.startsWith('Leveling ')
+        const levelingSkill = isLeveling ? activityLabel.replace('Leveling ', '') : null
 
         return (
           <motion.button
@@ -90,20 +101,25 @@ export function FriendList({ friends, onSelectFriend }: FriendListProps) {
               </div>
 
               {/* Status line */}
-              <div className="flex items-center gap-1.5">
-                {f.is_online ? (
-                  isLeveling ? (
-                    <span className="text-[11px] text-cyber-neon font-medium flex items-center gap-1">
-                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyber-neon animate-pulse" />
-                      Leveling {levelingSkill}
-                    </span>
-                  ) : f.current_activity ? (
-                    <span className="text-[11px] text-blue-400 truncate">{f.current_activity}</span>
+              <div className="flex flex-col gap-0.5">
+                <div className="flex items-center gap-1.5">
+                  {f.is_online ? (
+                    isLeveling ? (
+                      <span className="text-[11px] text-cyber-neon font-medium flex items-center gap-1">
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyber-neon animate-pulse" />
+                        Leveling {levelingSkill}
+                      </span>
+                    ) : activityLabel ? (
+                      <span className="text-[11px] text-blue-400 truncate">{activityLabel}</span>
+                    ) : (
+                      <span className="text-[11px] text-gray-400">Online</span>
+                    )
                   ) : (
-                    <span className="text-[11px] text-gray-400">Online</span>
-                  )
-                ) : (
-                  <span className="text-[11px] text-gray-600">Offline</span>
+                    <span className="text-[11px] text-gray-600">Offline</span>
+                  )}
+                </div>
+                {f.is_online && appName && (
+                  <span className="text-[10px] text-gray-500 truncate">в {appName}</span>
                 )}
               </div>
 
