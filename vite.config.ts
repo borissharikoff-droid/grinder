@@ -7,7 +7,7 @@ export default defineConfig({
   root: 'src/renderer',
   publicDir: 'public',
   base: './',
-  envDir: '../../',
+  envDir: path.join(__dirname),
   build: {
     outDir: '../../dist/renderer',
     emptyOutDir: true,
@@ -19,6 +19,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    open: true,
   },
   test: {
     include: ['../../src/tests/**/*.test.ts'],
