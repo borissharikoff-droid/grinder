@@ -1,0 +1,94 @@
+import { motion, AnimatePresence } from 'framer-motion'
+import type { PendingRequest } from '../../hooks/useFriends'
+
+interface PendingRequestsProps {
+  requests: PendingRequest[]
+  onAccept: (friendshipId: string) => void
+  onReject: (friendshipId: string) => void
+}
+
+export function PendingRequests({ requests, onAccept, onReject }: PendingRequestsProps) {
+  const incoming = requests.filter((r) => r.direction === 'incoming')
+  const outgoing = requests.filter((r) => r.direction === 'outgoing')
+
+  if (requests.length === 0) return null
+
+  return (
+    <div className="space-y-3">
+      {incoming.length > 0 && (
+        <div className="rounded-xl bg-discord-card/80 border border-white/10 p-4">
+          <p className="text-xs uppercase tracking-wider text-gray-400 font-mono mb-3">
+            [ incoming requests — {incoming.length} ]
+          </p>
+          <AnimatePresence>
+            {incoming.map((req) => (
+              <motion.div
+                key={req.friendship_id}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 10, height: 0 }}
+                className="flex items-center gap-3 py-2"
+              >
+                <div className="h-9 w-9 rounded-full bg-discord-accent/30 flex items-center justify-center text-white text-sm font-semibold shrink-0">
+                  {req.profile.avatar_url || (req.profile.username || '??').toUpperCase().slice(0, 2)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-white truncate">
+                    {req.profile.username || 'Anonymous'}
+                  </p>
+                  <p className="text-xs text-gray-500">Lv.{req.profile.level}</p>
+                </div>
+                <div className="flex gap-1.5 shrink-0">
+                  <motion.button
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => onAccept(req.friendship_id)}
+                    className="px-3 py-1.5 rounded-lg bg-cyber-neon/20 text-cyber-neon text-xs font-semibold hover:bg-cyber-neon/30 transition-colors border border-cyber-neon/30"
+                  >
+                    Accept
+                  </motion.button>
+                  <motion.button
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => onReject(req.friendship_id)}
+                    className="px-3 py-1.5 rounded-lg bg-discord-red/20 text-discord-red text-xs font-semibold hover:bg-discord-red/30 transition-colors border border-discord-red/30"
+                  >
+                    Reject
+                  </motion.button>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
+
+      {outgoing.length > 0 && (
+        <div className="rounded-xl bg-discord-card/80 border border-white/10 p-4">
+          <p className="text-xs uppercase tracking-wider text-gray-400 font-mono mb-3">
+            [ sent requests — {outgoing.length} ]
+          </p>
+          {outgoing.map((req) => (
+            <div key={req.friendship_id} className="flex items-center gap-3 py-2">
+              <div className="h-9 w-9 rounded-full bg-discord-accent/30 flex items-center justify-center text-white text-sm font-semibold shrink-0">
+                {req.profile.avatar_url || (req.profile.username || '??').toUpperCase().slice(0, 2)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-white truncate">
+                  {req.profile.username || 'Anonymous'}
+                </p>
+                <p className="text-xs text-gray-500">Lv.{req.profile.level}</p>
+              </div>
+              <span className="text-xs text-gray-500 italic shrink-0">pending</span>
+              <motion.button
+                whileTap={{ scale: 0.9 }}
+                onClick={() => onReject(req.friendship_id)}
+                className="text-gray-500 hover:text-discord-red text-xs shrink-0"
+                title="Cancel request"
+              >
+                ✕
+              </motion.button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}

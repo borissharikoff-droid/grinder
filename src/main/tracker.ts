@@ -1,0 +1,369 @@
+import { spawn, type ChildProcess } from 'child_process'
+import log from './logger'
+
+// ── Persistent PowerShell window detector ──
+
+let detectorProcess: ChildProcess | null = null
+let latestWinInfo: { appName: string; title: string; keys: number } | null = null
+let stdoutBuffer = ''
+
+/**
+ * A single persistent PowerShell process that:
+ * 1) Loads Win32 APIs once via Add-Type (GetForegroundWindow, GetWindowThreadProcessId, GetWindowText, GetAsyncKeyState)
+ * 2) Loops every ~1.5s, outputs "WIN:ProcessName|WindowTitle|KeystrokeCount"
+ * 3) Keystroke count uses GetAsyncKeyState — polls all printable key codes and counts those pressed since last check
+ */
+const DETECTOR_SCRIPT = `
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Add-Type @"
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+public class WinApi {
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int GetWindowTextLength(IntPtr hWnd);
+    [DllImport("user32.dll")]
+    public static extern short GetAsyncKeyState(int vKey);
+    public static string GetTitle(IntPtr hWnd) {
+        int len = GetWindowTextLength(hWnd);
+        if (len <= 0) return "";
+        StringBuilder sb = new StringBuilder(len + 1);
+        GetWindowText(hWnd, sb, sb.Capacity);
+        return sb.ToString();
+    }
+    public static int CountKeyPresses() {
+        int count = 0;
+        for (int vk = 0x08; vk <= 0xFE; vk++) {
+            short state = GetAsyncKeyState(vk);
+            if ((state & 0x0001) != 0) count++;
+        }
+        return count;
+    }
+}
+"@
+while ($true) {
+    try {
+        $keys = [WinApi]::CountKeyPresses()
+        $hwnd = [WinApi]::GetForegroundWindow()
+        $pid2 = [uint32]0
+        [void][WinApi]::GetWindowThreadProcessId($hwnd, [ref]$pid2)
+        if ($pid2 -gt 0) {
+            $proc = Get-Process -Id $pid2 -ErrorAction SilentlyContinue
+            if ($proc) {
+                $pname = $proc.ProcessName
+                if ($pname -eq 'explorer') {
+                    [Console]::Out.WriteLine("WIN:Idle||" + $keys)
+                    [Console]::Out.Flush()
+                } else {
+                    $title = [WinApi]::GetTitle($hwnd)
+                    [Console]::Out.WriteLine("WIN:" + $pname + "|" + $title + "|" + $keys)
+                    [Console]::Out.Flush()
+                }
+            } else {
+                [Console]::Out.WriteLine("WIN:Idle||" + $keys)
+                [Console]::Out.Flush()
+            }
+        } else {
+            [Console]::Out.WriteLine("WIN:Idle||" + $keys)
+            [Console]::Out.Flush()
+        }
+    } catch {
+        [Console]::Out.WriteLine("WIN:Idle||0")
+        [Console]::Out.Flush()
+    }
+    Start-Sleep -Milliseconds 1500
+}
+`.replace(/\r?\n/g, '\n').trim()
+
+function parseLine(line: string): void {
+  const trimmed = line.trim()
+  if (!trimmed.startsWith('WIN:')) return
+  const payload = trimmed.slice(4)
+  // Format: ProcessName|WindowTitle|KeyCount
+  const firstSep = payload.indexOf('|')
+  if (firstSep < 0) return
+  const appName = payload.slice(0, firstSep).trim() || 'Idle'
+  const rest = payload.slice(firstSep + 1)
+  const lastSep = rest.lastIndexOf('|')
+  let title: string
+  let keys = 0
+  if (lastSep >= 0) {
+    title = rest.slice(0, lastSep).trim()
+    keys = parseInt(rest.slice(lastSep + 1), 10) || 0
+  } else {
+    title = rest.trim()
+  }
+  latestWinInfo = { appName, title, keys }
+}
+
+function startWindowDetector(): void {
+  if (process.platform !== 'win32') return
+  if (detectorProcess) return
+  log.info('[tracker] Starting persistent window detector')
+
+  const buf = Buffer.from(DETECTOR_SCRIPT, 'utf16le')
+  const encoded = buf.toString('base64')
+
+  detectorProcess = spawn(
+    'powershell',
+    ['-NoProfile', '-NoLogo', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
+    { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } }
+  )
+
+  detectorProcess.stdout?.on('data', (chunk: Buffer) => {
+    stdoutBuffer += chunk.toString('utf8')
+    const lines = stdoutBuffer.split(/\r?\n/)
+    stdoutBuffer = lines.pop() || ''
+    for (const line of lines) {
+      parseLine(line)
+    }
+  })
+
+  detectorProcess.stderr?.on('data', (chunk: Buffer) => {
+    const msg = chunk.toString().trim()
+    if (msg) log.warn('[tracker:stderr]', msg)
+  })
+
+  detectorProcess.on('exit', (code) => {
+    log.info('[tracker] Detector process exited with code', code)
+    detectorProcess = null
+    stdoutBuffer = ''
+  })
+
+  detectorProcess.on('error', (err) => {
+    log.error('[tracker] Detector process error:', err)
+    detectorProcess = null
+  })
+}
+
+function stopWindowDetector(): void {
+  if (detectorProcess) {
+    try {
+      detectorProcess.kill()
+    } catch { /* ignore */ }
+    detectorProcess = null
+    stdoutBuffer = ''
+  }
+}
+
+// ── Activity types ──
+export type ActivityCategory = 'coding' | 'design' | 'games' | 'social' | 'browsing' | 'creative' | 'learning' | 'music' | 'other'
+
+export interface ActivitySnapshot {
+  appName: string
+  windowTitle: string
+  category: ActivityCategory
+  timestamp: number
+  keystrokes: number
+}
+
+export interface ActivitySegment {
+  appName: string
+  windowTitle: string
+  category: string
+  startTime: number
+  endTime: number
+  keystrokes: number
+}
+
+// ── State ──
+let pollInterval: NodeJS.Timeout | null = null
+let isPaused = false
+let lastActivity: ActivitySnapshot | null = null
+const listeners: ((a: ActivitySnapshot) => void)[] = []
+let segments: ActivitySegment[] = []
+let currentSegmentStart = 0
+let currentSegmentActivity: ActivitySnapshot | null = null
+let currentSegmentKeystrokes = 0
+let totalSessionKeystrokes = 0
+
+// ── AFK / Idle detection ──
+let idleConsecutivePolls = 0
+let isIdle = false
+let afkThresholdMs = 3 * 60 * 1000 // default 3 minutes
+const POLL_INTERVAL_MS = 2000
+const idleListeners: ((idle: boolean) => void)[] = []
+
+function emitIdle(idle: boolean) {
+  if (isIdle === idle) return
+  isIdle = idle
+  idleListeners.forEach(cb => cb(idle))
+}
+
+function categorize(appName: string, windowTitle: string): ActivityCategory {
+  const lowerApp = appName.toLowerCase()
+  const lowerTitle = windowTitle.toLowerCase()
+  if (/^(code|cursor|intellij|webstorm|pycharm|idea|devenv|rider)$/i.test(lowerApp) || /visual studio/i.test(lowerApp)) return 'coding'
+  if (/\.(tsx?|jsx?|py|rs|go|cpp|cs|java)\b/i.test(lowerTitle)) return 'coding'
+  if (/^(figma|photoshop|sketch|canva|illustrator|xd|invision|zeplin|affinity|gimp|krita)$/i.test(lowerApp) || /figma|design|mockup/i.test(lowerTitle)) return 'design'
+  if (/^(ableton|fl studio|reaper|logic|audacity|premiere|davinci|resolve|obs|blender|afterfx|vegas|cinema4d)$/i.test(lowerApp) || /premiere|davinci|blender|after effects/i.test(lowerTitle)) return 'creative'
+  if (/^(notion|obsidian|anki|sumatrapdf|acrobat|acrord32|foxit|foxitreader|kindle|evernote|onenote)$/i.test(lowerApp) || /\.pdf\b|notion|obsidian|anki/i.test(lowerTitle)) return 'learning'
+  if (/^(spotify|music|soundcloud|itunes|tidal|yandexmusic)$/i.test(lowerApp) || /youtube.*music|spotify|soundcloud/i.test(lowerTitle)) return 'music'
+  if (/^(steam|epicgameslauncher|valorant|leagueclient|dota2|minecraft|fortniteclient|gta|csgo|cs2|overwatch|battle\.net|javaw)$/i.test(lowerApp) || /game|play|steam/i.test(lowerTitle)) return 'games'
+  if (/^(telegram|discord|slack|whatsapp|teams)$/i.test(lowerApp)) return 'social'
+  if (/^(chrome|firefox|msedge|brave|opera|vivaldi|arc|yandex)$/i.test(lowerApp)) return 'browsing'
+  return 'other'
+}
+
+function getAppDisplayName(appName: string): string {
+  const map: Record<string, string> = {
+    code: 'VS Code',
+    cursor: 'Cursor',
+    chrome: 'Google Chrome',
+    msedge: 'Microsoft Edge',
+    firefox: 'Firefox',
+    brave: 'Brave',
+    spotify: 'Spotify',
+    telegram: 'Telegram',
+    discord: 'Discord',
+    explorer: 'Explorer',
+    windowsterminal: 'Terminal',
+    powershell: 'PowerShell',
+    cmd: 'Command Prompt',
+    notepad: 'Notepad',
+    devenv: 'Visual Studio',
+    slack: 'Slack',
+    teams: 'Teams',
+    notion: 'Notion',
+    figma: 'Figma',
+    obsidian: 'Obsidian',
+    dota2: 'Dota 2',
+    cs2: 'Counter-Strike 2',
+    csgo: 'CS:GO',
+    valorant: 'Valorant',
+    leagueclient: 'League of Legends',
+    steam: 'Steam',
+    epicgameslauncher: 'Epic Games',
+    sumatrapdf: 'SumatraPDF',
+    acrord32: 'Adobe Acrobat',
+    acrobat: 'Adobe Acrobat',
+    rider: 'JetBrains Rider',
+    vivaldi: 'Vivaldi',
+    arc: 'Arc',
+    yandex: 'Yandex Browser',
+  }
+  const base = appName.replace(/\.(exe|app)$/i, '')
+  return map[base.toLowerCase()] || base
+}
+
+function pushCurrentSegment(now: number): void {
+  if (!currentSegmentActivity) return
+  segments.push({
+    appName: currentSegmentActivity.appName,
+    windowTitle: currentSegmentActivity.windowTitle,
+    category: currentSegmentActivity.category,
+    startTime: currentSegmentStart,
+    endTime: now,
+    keystrokes: currentSegmentKeystrokes,
+  })
+  currentSegmentKeystrokes = 0
+}
+
+function poll(): void {
+  if (isPaused) return
+  const now = Date.now()
+
+  if (latestWinInfo) {
+    const { appName: rawName, title: windowTitle, keys } = latestWinInfo
+    totalSessionKeystrokes += keys
+    currentSegmentKeystrokes += keys
+
+    // AFK detection: track consecutive polls with 0 keystrokes
+    if (keys === 0) {
+      idleConsecutivePolls++
+      const idleMs = idleConsecutivePolls * POLL_INTERVAL_MS
+      if (idleMs >= afkThresholdMs && !isIdle) {
+        emitIdle(true)
+      }
+    } else {
+      if (isIdle) {
+        emitIdle(false)
+      }
+      idleConsecutivePolls = 0
+    }
+
+    const category = categorize(rawName, windowTitle)
+    const displayName = getAppDisplayName(rawName)
+    lastActivity = { appName: displayName, windowTitle, category, timestamp: now, keystrokes: totalSessionKeystrokes }
+    listeners.forEach((cb) => cb(lastActivity!))
+
+    const key = `${lastActivity.appName}|${lastActivity.category}`
+    const prevKey = currentSegmentActivity ? `${currentSegmentActivity.appName}|${currentSegmentActivity.category}` : ''
+    if (key !== prevKey) {
+      pushCurrentSegment(now)
+      currentSegmentStart = now
+      currentSegmentActivity = lastActivity
+    }
+  } else {
+    lastActivity = { appName: 'Unknown', windowTitle: 'Detecting...', category: 'other', timestamp: now, keystrokes: totalSessionKeystrokes }
+    listeners.forEach((cb) => cb(lastActivity!))
+  }
+}
+
+export function getTrackerApi() {
+  return {
+    start() {
+      if (pollInterval) return
+      segments = []
+      currentSegmentStart = Date.now()
+      currentSegmentActivity = null
+      currentSegmentKeystrokes = 0
+      totalSessionKeystrokes = 0
+      idleConsecutivePolls = 0
+      isIdle = false
+      latestWinInfo = null
+      startWindowDetector()
+      pollInterval = setInterval(poll, POLL_INTERVAL_MS)
+      setTimeout(poll, 2500)
+    },
+    stop(): ActivitySegment[] {
+      if (pollInterval) {
+        clearInterval(pollInterval)
+        pollInterval = null
+      }
+      isPaused = false
+      isIdle = false
+      idleConsecutivePolls = 0
+      pushCurrentSegment(Date.now())
+      currentSegmentActivity = null
+      stopWindowDetector()
+      const result = [...segments]
+      segments = []
+      return result
+    },
+    pause() {
+      isPaused = true
+    },
+    resume() {
+      isPaused = false
+      idleConsecutivePolls = 0
+      isIdle = false
+    },
+    getCurrentActivity(): ActivitySnapshot | null {
+      return lastActivity
+    },
+    onActivityUpdate(cb: (a: ActivitySnapshot) => void) {
+      listeners.push(cb)
+      return () => {
+        const i = listeners.indexOf(cb)
+        if (i >= 0) listeners.splice(i, 1)
+      }
+    },
+    onIdleChange(cb: (idle: boolean) => void) {
+      idleListeners.push(cb)
+      return () => {
+        const i = idleListeners.indexOf(cb)
+        if (i >= 0) idleListeners.splice(i, 1)
+      }
+    },
+    setAfkThreshold(ms: number) {
+      afkThresholdMs = Math.max(30000, ms) // minimum 30s
+    },
+  }
+}

@@ -1,0 +1,25 @@
+appId: com.grinder.app
+productName: Grinder
+directories:
+  output: release
+files:
+  - dist/**/*
+  - package.json
+  - node_modules/**/*
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  signingHashAlgorithms: []
+  sign: null
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  artifactName: "Grinder-Setup-${version}.exe"
+forceCodeSigning: false
+publish:
+  provider: github
+  owner: OWNER
+  repo: REPO

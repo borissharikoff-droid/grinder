@@ -1,0 +1,132 @@
+import { useState, useEffect } from 'react'
+import { motion } from 'framer-motion'
+
+interface AIAnalysisProps {
+  sessionId: string
+}
+
+const BLOCK_ICONS = ['🧠', '⚡', '🏆']
+const BLOCK_LABELS = ['Behavior Profile', 'Focus Patterns', 'Verdict']
+
+function parseAnalysisBlocks(text: string): string[] {
+  // Split by double newlines (paragraphs)
+  const paragraphs = text.split(/\n\n+/).map((p) => p.trim()).filter(Boolean)
+  if (paragraphs.length >= 2) return paragraphs.slice(0, 3)
+  // Fallback: split by single newlines
+  const lines = text.split(/\n/).map((l) => l.trim()).filter(Boolean)
+  if (lines.length >= 2) {
+    const blocks: string[] = []
+    let current = ''
+    for (const line of lines) {
+      if (/^\d+[\.\)]/.test(line) && current) {
+        blocks.push(current.trim())
+        current = line.replace(/^\d+[\.\)]\s*/, '')
+      } else {
+        current += (current ? ' ' : '') + line.replace(/^\d+[\.\)]\s*/, '')
+      }
+    }
+    if (current) blocks.push(current.trim())
+    return blocks.slice(0, 3)
+  }
+  return [text]
+}
+
+export function AIAnalysis({ sessionId }: AIAnalysisProps) {
+  const [text, setText] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setText(null)
+    setError(null)
+    const api = window.electronAPI
+    if (!api?.db?.getSessionAnalysis || !api?.ai?.analyzeSession) return
+    api.db.getSessionAnalysis(sessionId).then((cached) => {
+      if (cached) setText(cached)
+    })
+  }, [sessionId])
+
+  const runAnalysis = () => {
+    const api = window.electronAPI
+    if (!api?.ai?.analyzeSession) return
+    setLoading(true)
+    setError(null)
+    api.ai
+      .analyzeSession(sessionId)
+      .then(setText)
+      .catch((e: Error) => setError(e?.message || 'Analysis failed'))
+      .finally(() => setLoading(false))
+  }
+
+  const blocks = text ? parseAnalysisBlocks(text) : []
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-xl bg-discord-card/80 border border-white/10 p-4"
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <div className="w-5 h-5 rounded bg-gradient-to-br from-purple-500/30 to-cyber-neon/30 flex items-center justify-center">
+          <span className="text-[10px]">⚡</span>
+        </div>
+        <p className="text-xs uppercase tracking-widest text-gray-400 font-mono font-bold">
+          GRINDALYTICS
+        </p>
+      </div>
+      {error && (
+        <div className="rounded-lg bg-discord-red/10 border border-discord-red/20 p-3 mb-2">
+          <p className="text-discord-red text-sm">{error}</p>
+        </div>
+      )}
+      {loading ? (
+        <div className="flex flex-col items-center py-6 gap-3">
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ repeat: Infinity, duration: 1.5, ease: 'linear' }}
+            className="w-8 h-8 rounded-full border-2 border-purple-500/30 border-t-purple-400"
+          />
+          <p className="text-purple-300 font-mono text-sm animate-pulse">Analyzing behavior...</p>
+        </div>
+      ) : blocks.length > 0 ? (
+        <div className="space-y-2.5">
+          {blocks.map((block, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.1 }}
+              className="rounded-lg bg-discord-darker/80 border border-white/5 p-3"
+            >
+              <div className="flex items-start gap-2.5">
+                <span className="text-base shrink-0 mt-0.5">
+                  {BLOCK_ICONS[i % BLOCK_ICONS.length]}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-mono text-gray-500 mb-1 uppercase tracking-wider">
+                    {BLOCK_LABELS[i % BLOCK_LABELS.length]}
+                  </p>
+                  <p className="text-sm text-gray-300 leading-relaxed">{block}</p>
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-2">
+          <p className="text-gray-500 text-sm mb-3">
+            AI-powered session analysis — behavior, focus patterns, verdict.
+          </p>
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={runAnalysis}
+            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-sm font-semibold hover:shadow-lg hover:shadow-purple-500/20 transition-shadow font-mono"
+          >
+            ⚡ RUN GRINDALYTICS
+          </motion.button>
+        </div>
+      )}
+    </motion.div>
+  )
+}
