@@ -61,6 +61,9 @@ interface SessionStore {
   dismissComplete: () => void
   dismissLevelUp: () => void
   checkStreakOnMount: () => Promise<number>
+  /** True when user is on home (grind) tab — live XP only ticks and shows popups there */
+  isGrindPageActive: boolean
+  setGrindPageActive: (v: boolean) => void
 }
 
 let tickInterval: ReturnType<typeof setInterval> | null = null
@@ -173,8 +176,9 @@ function startXpTicking() {
   lastXpTickTime = Date.now()
 
   xpTickInterval = setInterval(async () => {
-    const { status, currentActivity, elapsedSeconds, sessionStartTime } = useSessionStore.getState()
+    const { status, currentActivity, elapsedSeconds, sessionStartTime, isGrindPageActive } = useSessionStore.getState()
     if (status !== 'running' || !sessionStartTime) return
+    if (!isGrindPageActive) return
 
     // Skip XP ticks for very short sessions (under 10s)
     if (elapsedSeconds < 10) return
@@ -210,9 +214,10 @@ function startXpTicking() {
       await api.db.setLocalStat('total_xp', String(newTotalXP))
     }
 
-    // Add popup
+    // Add popup — on grind page show reduced amount for pixel display ("кратно меньше")
     const popupId = crypto.randomUUID()
-    const newPopup = { id: popupId, amount: xpEarned }
+    const popupAmount = Math.max(1, Math.floor(xpEarned / 4))
+    const newPopup = { id: popupId, amount: popupAmount }
 
     // Check for level up
     if (newLevel > prevLevel) {
@@ -264,6 +269,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   levelBefore: 1,
   pendingLevelUp: null,
   sessionRewards: [],
+  isGrindPageActive: true,
+  setGrindPageActive: (v) => set({ isGrindPageActive: v }),
 
   tick() {
     const { sessionStartTime } = get()
@@ -433,6 +440,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   dismissLevelUp() {
     set({ pendingLevelUp: null })
+  },
+
+  setGrindPageActive(v: boolean) {
+    set({ isGrindPageActive: v })
   },
 
   async checkStreakOnMount(): Promise<number> {

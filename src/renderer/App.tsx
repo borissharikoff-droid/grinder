@@ -87,6 +87,10 @@ export default function App() {
 
   const handleNavigateProfile = useCallback(() => setActiveTab('profile'), [])
 
+  useEffect(() => {
+    useSessionStore.getState().setGrindPageActive(activeTab === 'home')
+  }, [activeTab])
+
   return (
     <AuthGate>
       <div className="flex flex-col h-full bg-discord-darker overflow-x-hidden">

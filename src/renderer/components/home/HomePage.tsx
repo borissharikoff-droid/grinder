@@ -18,7 +18,7 @@ interface HomePageProps {
 }
 
 export function HomePage({ onNavigateProfile }: HomePageProps) {
-  const { showComplete, setCurrentActivity, status, liveXP, pendingLevelUp } = useSessionStore()
+  const { showComplete, setCurrentActivity, status, pendingLevelUp } = useSessionStore()
   const [showWelcome, setShowWelcome] = useState(false)
 
   useEffect(() => {
@@ -89,15 +89,6 @@ export function HomePage({ onNavigateProfile }: HomePageProps) {
                 className="flex flex-col items-center gap-3"
               >
                 <CurrentActivity />
-                {liveXP > 0 && (
-                  <motion.span
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="text-cyber-neon text-xs font-mono"
-                  >
-                    +{liveXP} XP this session
-                  </motion.span>
-                )}
               </motion.div>
             )}
           </AnimatePresence>
