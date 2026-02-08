@@ -81,6 +81,15 @@ export function skillHoursFromXP(xp: number): number {
   return Math.floor(xp / 3600 * 10) / 10
 }
 
+/** Format XP (seconds) as "Xh Ym" or "Xm" if under 1h. */
+export function formatSkillTime(xp: number): string {
+  const totalMin = Math.floor(xp / 60)
+  const h = Math.floor(totalMin / 60)
+  const m = totalMin % 60
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`
+  return `${m}m`
+}
+
 export interface ActivitySegmentForXP {
   category: string
   startTime: number

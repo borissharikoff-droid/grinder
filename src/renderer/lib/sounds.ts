@@ -1,35 +1,46 @@
 // Web Audio API sound effects — no external files needed
 
 let audioCtx: AudioContext | null = null
+let cachedVolume = 0.5
+let cachedMuted = false
+let settingsLoaded = false
+
+function loadSettings() {
+  if (settingsLoaded) return
+  settingsLoaded = true
+  try {
+    const v = localStorage.getItem('grinder_sound_volume')
+    if (v !== null) cachedVolume = parseFloat(v)
+    cachedMuted = localStorage.getItem('grinder_sound_muted') === 'true'
+  } catch { /* ignore */ }
+}
 
 function getAudioCtx(): AudioContext {
   if (!audioCtx) audioCtx = new AudioContext()
+  if (audioCtx.state === 'suspended') audioCtx.resume()
   return audioCtx
 }
 
-function getVolume(): number {
+// Pre-warm audio context on first user gesture
+export function warmUpAudio() {
   try {
-    const v = localStorage.getItem('grinder_sound_volume')
-    return v !== null ? parseFloat(v) : 0.5
-  } catch {
-    return 0.5
-  }
-}
-
-function isMuted(): boolean {
-  try {
-    return localStorage.getItem('grinder_sound_muted') === 'true'
-  } catch {
-    return false
-  }
+    const ctx = getAudioCtx()
+    // Create a silent buffer to unlock audio
+    const buf = ctx.createBuffer(1, 1, 22050)
+    const src = ctx.createBufferSource()
+    src.buffer = buf
+    src.connect(ctx.destination)
+    src.start(0)
+  } catch { /* ignore */ }
 }
 
 function playTone(frequency: number, duration: number, type: OscillatorType = 'sine', gainVal?: number) {
-  if (isMuted()) return
+  loadSettings()
+  if (cachedMuted) return
   const ctx = getAudioCtx()
   const osc = ctx.createOscillator()
   const gain = ctx.createGain()
-  const vol = gainVal ?? getVolume()
+  const vol = gainVal ?? cachedVolume
   osc.type = type
   osc.frequency.setValueAtTime(frequency, ctx.currentTime)
   gain.gain.setValueAtTime(vol * 0.3, ctx.currentTime)
@@ -41,15 +52,15 @@ function playTone(frequency: number, duration: number, type: OscillatorType = 's
 }
 
 export function playClickSound() {
-  if (isMuted()) return
+  loadSettings()
+  if (cachedMuted) return
   const ctx = getAudioCtx()
   const osc = ctx.createOscillator()
   const gain = ctx.createGain()
-  const vol = getVolume()
   osc.type = 'sine'
   osc.frequency.setValueAtTime(800, ctx.currentTime)
   osc.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.05)
-  gain.gain.setValueAtTime(vol * 0.15, ctx.currentTime)
+  gain.gain.setValueAtTime(cachedVolume * 0.15, ctx.currentTime)
   gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08)
   osc.connect(gain)
   gain.connect(ctx.destination)
@@ -57,13 +68,13 @@ export function playClickSound() {
   osc.stop(ctx.currentTime + 0.08)
 }
 
-/** Softer, short click for tab / nav — satisfying and subtle */
 export function playTabSound() {
-  if (isMuted()) return
+  loadSettings()
+  if (cachedMuted) return
   const ctx = getAudioCtx()
   const osc = ctx.createOscillator()
   const gain = ctx.createGain()
-  const vol = getVolume() * 0.4
+  const vol = cachedVolume * 0.4
   osc.type = 'sine'
   osc.frequency.setValueAtTime(520, ctx.currentTime)
   gain.gain.setValueAtTime(vol * 0.12, ctx.currentTime)
@@ -75,62 +86,62 @@ export function playTabSound() {
 }
 
 export function playSessionStartSound() {
-  if (isMuted()) return
-  const vol = getVolume()
-  // Ascending three-note chime
-  playTone(523, 0.2, 'sine', vol)    // C5
-  setTimeout(() => playTone(659, 0.2, 'sine', vol), 100)   // E5
-  setTimeout(() => playTone(784, 0.35, 'sine', vol), 200)  // G5
+  loadSettings()
+  if (cachedMuted) return
+  playTone(523, 0.2, 'sine', cachedVolume)
+  setTimeout(() => playTone(659, 0.2, 'sine', cachedVolume), 100)
+  setTimeout(() => playTone(784, 0.35, 'sine', cachedVolume), 200)
 }
 
 export function playSessionStopSound() {
-  if (isMuted()) return
-  const vol = getVolume()
-  // Descending two notes
-  playTone(784, 0.25, 'sine', vol)   // G5
-  setTimeout(() => playTone(523, 0.4, 'sine', vol), 150)   // C5
+  loadSettings()
+  if (cachedMuted) return
+  playTone(784, 0.25, 'sine', cachedVolume)
+  setTimeout(() => playTone(523, 0.4, 'sine', cachedVolume), 150)
 }
 
 export function playSessionCompleteSound() {
-  if (isMuted()) return
-  const vol = getVolume()
-  // Victory fanfare — ascending arpeggio
-  const notes = [523, 659, 784, 1047] // C5 E5 G5 C6
+  loadSettings()
+  if (cachedMuted) return
+  const notes = [523, 659, 784, 1047]
   notes.forEach((freq, i) => {
-    setTimeout(() => playTone(freq, 0.3, 'sine', vol), i * 120)
+    setTimeout(() => playTone(freq, 0.3, 'sine', cachedVolume), i * 120)
   })
 }
 
 export function playAchievementSound() {
-  if (isMuted()) return
-  const vol = getVolume()
-  // Sparkly achievement sound
-  const notes = [880, 1109, 1319, 1568, 1760] // A5 C#6 E6 G6 A6
+  loadSettings()
+  if (cachedMuted) return
+  const notes = [880, 1109, 1319, 1568, 1760]
   notes.forEach((freq, i) => {
-    setTimeout(() => playTone(freq, 0.25, 'triangle', vol), i * 80)
+    setTimeout(() => playTone(freq, 0.25, 'triangle', cachedVolume), i * 80)
   })
 }
 
 export function playPauseSound() {
-  if (isMuted()) return
+  loadSettings()
+  if (cachedMuted) return
   playTone(440, 0.15, 'sine')
 }
 
 export function playResumeSound() {
-  if (isMuted()) return
-  const vol = getVolume()
-  playTone(440, 0.1, 'sine', vol)
-  setTimeout(() => playTone(554, 0.15, 'sine', vol), 80)
+  loadSettings()
+  if (cachedMuted) return
+  playTone(440, 0.1, 'sine', cachedVolume)
+  setTimeout(() => playTone(554, 0.15, 'sine', cachedVolume), 80)
 }
 
 export function setSoundVolume(volume: number) {
-  localStorage.setItem('grinder_sound_volume', String(Math.max(0, Math.min(1, volume))))
+  cachedVolume = Math.max(0, Math.min(1, volume))
+  localStorage.setItem('grinder_sound_volume', String(cachedVolume))
 }
 
 export function setSoundMuted(muted: boolean) {
+  cachedMuted = muted
   localStorage.setItem('grinder_sound_muted', String(muted))
 }
 
 export function getSoundSettings(): { volume: number; muted: boolean } {
-  return { volume: getVolume(), muted: isMuted() }
+  loadSettings()
+  return { volume: cachedVolume, muted: cachedMuted }
 }

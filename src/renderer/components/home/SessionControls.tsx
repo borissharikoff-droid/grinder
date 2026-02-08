@@ -15,17 +15,16 @@ export function SessionControls({ glowPulse }: SessionControlsProps) {
   const [confirmState, setConfirmState] = useState<'none' | 'discard' | 'confirm'>('none')
 
   const handleStartStop = () => {
-    playClickSound()
     if (isActive) {
-      // Short session: confirm discard
+      playClickSound()
       if (elapsedSeconds < 30) {
         setConfirmState('discard')
         return
       }
-      // Normal session: quick confirm
       setConfirmState('confirm')
     } else {
       start()
+      playClickSound()
     }
   }
 
@@ -47,16 +46,16 @@ export function SessionControls({ glowPulse }: SessionControlsProps) {
   }
 
   return (
-    <div className="flex flex-col items-center gap-3">
-      {/* Confirmation dialogs */}
+    <div className="relative flex flex-col items-center">
+      {/* Confirmation dialog — absolute, doesn't push buttons */}
       <AnimatePresence>
         {confirmState !== 'none' && (
           <motion.div
-            initial={{ opacity: 0, y: 10, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.95 }}
-            transition={{ duration: 0.2 }}
-            className="rounded-xl bg-discord-card/95 border border-white/10 p-4 backdrop-blur-sm w-72"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ duration: 0.15 }}
+            className="absolute bottom-full mb-3 rounded-xl bg-discord-card border border-white/10 p-4 w-72 z-10"
           >
             <p className="text-sm text-white font-semibold text-center mb-1">
               {confirmState === 'discard' ? 'Session under 30s' : 'Stop grinding?'}
@@ -67,65 +66,48 @@ export function SessionControls({ glowPulse }: SessionControlsProps) {
                 : 'End this grind session and save progress?'}
             </p>
             <div className="flex gap-2">
-              <motion.button
-                whileTap={{ scale: 0.95 }}
+              <button
                 onClick={handleCancel}
-                className="flex-1 py-2 rounded-lg bg-discord-darker border border-white/10 text-sm text-gray-300 font-medium hover:bg-discord-darker/80 transition-colors"
+                className="flex-1 py-2 rounded-lg bg-discord-darker border border-white/10 text-sm text-gray-400 font-medium hover:bg-discord-darker/80 transition-colors active:scale-95"
               >
-                Cancel
-              </motion.button>
-              <motion.button
-                whileTap={{ scale: 0.95 }}
+                Continue
+              </button>
+              <button
                 onClick={handleConfirmStop}
-                className="flex-1 py-2 rounded-lg bg-discord-red text-white text-sm font-bold hover:bg-red-600 transition-colors"
+                className="flex-1 py-2 rounded-lg bg-discord-red text-white text-sm font-bold hover:bg-red-600 transition-colors active:scale-95"
               >
-                {confirmState === 'discard' ? 'Discard' : 'Stop'}
-              </motion.button>
+                I'm done
+              </button>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Main controls */}
-      <div className="flex items-center gap-3">
+      {/* Main controls — centered */}
+      <div className="flex items-center justify-center gap-3">
         <div className="relative">
-          {/* Pulsing glow behind button — perfectly round, matching button shape */}
           {glowPulse && (
-            <div className="absolute -inset-3 rounded-[20px] bg-cyber-neon/25 blur-2xl animate-pulse pointer-events-none" />
+            <div className="absolute -inset-2 rounded-[20px] animate-glow-pulse pointer-events-none" />
           )}
-          {glowPulse && (
-            <div className="absolute -inset-1.5 rounded-[18px] bg-cyber-neon/15 blur-md animate-pulse pointer-events-none" />
-          )}
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.93 }}
-            transition={{ type: 'spring', damping: 18, stiffness: 400 }}
+          <button
             onClick={handleStartStop}
-            className={`relative px-8 py-3 rounded-2xl font-bold text-sm transition-all duration-300 ${
+            className={`relative min-w-[120px] px-8 py-3 rounded-2xl font-bold text-sm transition-colors duration-150 active:scale-[0.93] ${
               isActive
                 ? 'bg-discord-red text-white hover:bg-red-600'
                 : 'bg-cyber-neon text-discord-darker shadow-glow hover:shadow-[0_0_30px_rgba(0,255,136,0.5)]'
             }`}
           >
             {isActive ? 'STOP' : 'GRIND'}
-          </motion.button>
+          </button>
         </div>
-        <AnimatePresence>
-          {isActive && (
-            <motion.button
-              initial={{ opacity: 0, scale: 0.85, x: -10 }}
-              animate={{ opacity: 1, scale: 1, x: 0 }}
-              exit={{ opacity: 0, scale: 0.85, x: -10 }}
-              transition={{ type: 'spring', damping: 20, stiffness: 350 }}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.93 }}
-              onClick={handlePauseResume}
-              className="px-5 py-3 rounded-2xl font-bold text-sm bg-discord-card text-white border border-white/10 transition-colors duration-200 hover:bg-discord-cardHover"
-            >
-              {isPaused ? 'RESUME' : 'PAUSE'}
-            </motion.button>
-          )}
-        </AnimatePresence>
+        {isActive && (
+          <button
+            onClick={handlePauseResume}
+            className="py-3 px-5 rounded-2xl font-bold text-sm bg-discord-card text-white border border-white/10 hover:bg-discord-cardHover active:scale-95 whitespace-nowrap transition-colors duration-150"
+          >
+            {isPaused ? 'RESUME' : 'PAUSE'}
+          </button>
+        )}
       </div>
     </div>
   )

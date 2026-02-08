@@ -1,65 +1,102 @@
-import { motion } from 'framer-motion'
-import { useState } from 'react'
+import { useEffect, useRef } from 'react'
 
 const COLORS = ['#00ff88', '#5865F2', '#ed4245', '#faa61a', '#57F287', '#ff6bff', '#00d4ff', '#ffeb3b']
+const PARTICLE_COUNT = 50
+
+interface Particle {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  size: number
+  color: string
+  rotation: number
+  rotationSpeed: number
+  opacity: number
+  shape: 'circle' | 'rect'
+}
 
 export function ConfettiEffect() {
-  const [pieces] = useState(() =>
-    Array.from({ length: 80 }, (_, i) => {
-      const angle = (Math.random() * Math.PI * 2)
-      const speed = 300 + Math.random() * 500
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    canvas.width = window.innerWidth
+    canvas.height = window.innerHeight
+
+    const particles: Particle[] = Array.from({ length: PARTICLE_COUNT }, () => {
+      const angle = Math.random() * Math.PI * 2
+      const speed = 4 + Math.random() * 8
       return {
-        id: i,
-        startX: 0,
-        startY: 0,
-        endX: Math.cos(angle) * speed,
-        endY: Math.sin(angle) * speed - 200,
-        delay: Math.random() * 0.2,
+        x: canvas.width / 2,
+        y: canvas.height * 0.33,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 6,
+        size: 4 + Math.random() * 6,
         color: COLORS[Math.floor(Math.random() * COLORS.length)],
-        size: 6 + Math.random() * 10,
-        rotation: Math.random() * 1080 - 540,
+        rotation: Math.random() * 360,
+        rotationSpeed: (Math.random() - 0.5) * 10,
+        opacity: 1,
         shape: Math.random() > 0.5 ? 'circle' : 'rect',
       }
     })
-  )
+
+    let animId: number
+    const gravity = 0.15
+    const drag = 0.99
+
+    function draw() {
+      ctx!.clearRect(0, 0, canvas!.width, canvas!.height)
+      let alive = false
+
+      for (const p of particles) {
+        if (p.opacity <= 0.01) continue
+        alive = true
+
+        p.vy += gravity
+        p.vx *= drag
+        p.vy *= drag
+        p.x += p.vx
+        p.y += p.vy
+        p.rotation += p.rotationSpeed
+        p.opacity -= 0.006
+
+        ctx!.save()
+        ctx!.globalAlpha = Math.max(0, p.opacity)
+        ctx!.translate(p.x, p.y)
+        ctx!.rotate((p.rotation * Math.PI) / 180)
+        ctx!.fillStyle = p.color
+
+        if (p.shape === 'circle') {
+          ctx!.beginPath()
+          ctx!.arc(0, 0, p.size / 2, 0, Math.PI * 2)
+          ctx!.fill()
+        } else {
+          ctx!.fillRect(-p.size / 2, -p.size * 0.2, p.size, p.size * 0.4)
+        }
+
+        ctx!.restore()
+      }
+
+      if (alive) {
+        animId = requestAnimationFrame(draw)
+      }
+    }
+
+    animId = requestAnimationFrame(draw)
+
+    return () => cancelAnimationFrame(animId)
+  }, [])
 
   return (
-    <div className="fixed inset-0 pointer-events-none z-40 overflow-hidden">
-      <div className="absolute top-1/3 left-1/2">
-        {pieces.map((p) => (
-          <motion.div
-            key={p.id}
-            initial={{
-              x: 0,
-              y: 0,
-              opacity: 1,
-              scale: 0,
-            }}
-            animate={{
-              x: p.endX,
-              y: p.endY + 600,
-              opacity: [1, 1, 0],
-              scale: [0, 1.5, 1],
-              rotate: p.rotation,
-            }}
-            transition={{
-              duration: 2.5,
-              delay: p.delay,
-              ease: [0.25, 0.46, 0.45, 0.94],
-              opacity: { times: [0, 0.6, 1] },
-              scale: { times: [0, 0.15, 1] },
-            }}
-            className="absolute"
-            style={{
-              width: p.size,
-              height: p.shape === 'circle' ? p.size : p.size * 0.4,
-              backgroundColor: p.color,
-              borderRadius: p.shape === 'circle' ? '50%' : '2px',
-              boxShadow: `0 0 6px ${p.color}60`,
-            }}
-          />
-        ))}
-      </div>
-    </div>
+    <canvas
+      ref={canvasRef}
+      className="fixed inset-0 pointer-events-none z-40"
+      style={{ width: '100%', height: '100%' }}
+    />
   )
 }

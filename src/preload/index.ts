@@ -53,6 +53,13 @@ const api = {
     updateGoal: (goal: { id: string; target_seconds: number; target_category: string | null; period: string }) => ipcRenderer.invoke('db:updateGoal', goal),
     deleteGoal: (id: string) => ipcRenderer.invoke('db:deleteGoal', id),
     getGoalProgress: (goal: { target_category: string | null; period: string; start_date: string }) => ipcRenderer.invoke('db:getGoalProgress', goal),
+    // Grind Tasks
+    getTasks: () => ipcRenderer.invoke('db:getTasks'),
+    createTask: (task: { id: string; text: string }) => ipcRenderer.invoke('db:createTask', task),
+    toggleTask: (id: string) => ipcRenderer.invoke('db:toggleTask', id),
+    updateTaskText: (id: string, text: string) => ipcRenderer.invoke('db:updateTaskText', id, text),
+    deleteTask: (id: string) => ipcRenderer.invoke('db:deleteTask', id),
+    clearDoneTasks: () => ipcRenderer.invoke('db:clearDoneTasks'),
     // Trends
     getDailyTotals: (days: number) => ipcRenderer.invoke('db:getDailyTotals', days),
     // Skill XP Log

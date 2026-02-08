@@ -1,13 +1,12 @@
-import { motion } from 'framer-motion'
 import type { TabId } from '../../App'
 import { playTabSound } from '../../lib/sounds'
 
-const tabs: { id: TabId; label: string; icon: string }[] = [
-  { id: 'home', label: 'Grind', icon: '⏱' },
-  { id: 'skills', label: 'Skills', icon: '⚡' },
-  { id: 'stats', label: 'Stats', icon: '📊' },
-  { id: 'friends', label: 'Friends', icon: '👥' },
-  { id: 'settings', label: 'Config', icon: '⚙' },
+const tabs: { id: TabId; icon: string }[] = [
+  { id: 'home', icon: '⏱' },
+  { id: 'skills', icon: '⚡' },
+  { id: 'stats', icon: '📊' },
+  { id: 'friends', icon: '👥' },
+  { id: 'settings', icon: '⚙' },
 ]
 
 interface BottomNavProps {
@@ -17,33 +16,28 @@ interface BottomNavProps {
 
 export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
   return (
-    <nav className="h-14 flex items-stretch border-t border-white/5 bg-discord-darker shrink-0">
-      {tabs.map((tab) => {
-        const active = activeTab === tab.id
-        return (
-          <motion.button
-            key={tab.id}
-            whileTap={{ scale: 0.97 }}
-            onClick={() => {
-              playTabSound()
-              onTabChange(tab.id)
-            }}
-            className={`flex-1 flex flex-col items-center justify-center gap-0.5 text-xs transition-colors ${
-              active ? 'text-cyber-neon' : 'text-gray-500 hover:text-gray-300'
-            }`}
-          >
-            <span className="text-base">{tab.icon}</span>
-            <span className="font-medium">{tab.label}</span>
-            {active && (
-              <motion.div
-                layoutId="bottom-indicator"
-                className="absolute bottom-0 h-0.5 w-8 bg-cyber-neon rounded-full"
-                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-              />
-            )}
-          </motion.button>
-        )
-      })}
-    </nav>
+    <div className="shrink-0 flex justify-center pb-3 pt-1">
+      <nav className="flex items-center gap-1 rounded-full bg-[#1a1a2e] border border-white/[0.07] px-1.5 py-1.5">
+        {tabs.map((tab) => {
+          const active = activeTab === tab.id
+          return (
+            <button
+              key={tab.id}
+              onClick={() => {
+                playTabSound()
+                onTabChange(tab.id)
+              }}
+              className={`w-9 h-9 flex items-center justify-center rounded-full text-sm transition-all duration-150 active:scale-90 ${
+                active
+                  ? 'bg-cyber-neon/15 text-cyber-neon shadow-[0_0_8px_rgba(0,255,136,0.15)]'
+                  : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
+              }`}
+            >
+              {tab.icon}
+            </button>
+          )
+        })}
+      </nav>
+    </div>
   )
 }

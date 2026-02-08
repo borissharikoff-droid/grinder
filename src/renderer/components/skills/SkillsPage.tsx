@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { SKILLS, skillLevelFromXP, skillXPProgress, skillHoursFromXP, categoryToSkillId } from '../../lib/skills'
+import { SKILLS, skillLevelFromXP, skillXPProgress, formatSkillTime, categoryToSkillId } from '../../lib/skills'
 import { useSessionStore } from '../../stores/sessionStore'
 
 interface SkillRow {
@@ -81,7 +81,7 @@ export function SkillsPage() {
           const level = skillLevelFromXP(xp)
           const { current, needed } = skillXPProgress(xp)
           const pct = needed > 0 ? Math.min(100, (current / needed) * 100) : 100
-          const hours = skillHoursFromXP(xp)
+          const timeStr = formatSkillTime(xp)
           const isExpanded = expandedId === skill.id
           const isLeveling = levelingSkillId === skill.id
 
@@ -144,7 +144,7 @@ export function SkillsPage() {
                     </div>
                     <div className="flex items-center justify-between mt-1">
                       <span className="text-[10px] text-gray-500 font-mono">{formatXP(current)} / {formatXP(needed)} XP</span>
-                      <span className="text-[10px] text-gray-600 font-mono">{hours}h played</span>
+                      <span className="text-[10px] text-gray-600 font-mono">{timeStr} played</span>
                     </div>
                   </div>
 

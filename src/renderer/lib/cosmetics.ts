@@ -119,23 +119,47 @@ export const BADGES: Badge[] = [
 // ─── FRAMES ──────────────────────────────────────────────
 // Frames are avatar borders. Limited/rare, only from specific achievements.
 
+export type FrameStyle = 'pixel' | 'broken' | 'matrix' | 'liquid' | 'glitch' | 'holographic' | 'flame' | 'royal'
+
 export interface Frame {
   id: string
   name: string
   color: string
   gradient: string
   rarity: 'Rare' | 'Epic' | 'Legendary'
+  style: FrameStyle
   unlockHint: string
   achievementId?: string
 }
 
 export const FRAMES: Frame[] = [
   {
+    id: 'diamond',
+    name: 'Diamond',
+    color: '#4FC3F7',
+    gradient: 'linear-gradient(135deg, #4FC3F7 0%, #E1F5FE 40%, #4FC3F7 100%)',
+    rarity: 'Rare',
+    style: 'pixel',
+    unlockHint: 'Complete 10 sessions',
+    achievementId: 'ten_sessions',
+  },
+  {
+    id: 'ember',
+    name: 'Ember',
+    color: '#FF8A65',
+    gradient: 'linear-gradient(135deg, #FF8A65 0%, #FF5722 50%, #BF360C 100%)',
+    rarity: 'Rare',
+    style: 'broken',
+    unlockHint: '7-day streak',
+    achievementId: 'streak_7',
+  },
+  {
     id: 'code',
     name: 'Code',
     color: '#00FF88',
     gradient: 'linear-gradient(135deg, #00FF88 0%, #00B4D8 100%)',
     rarity: 'Epic',
+    style: 'matrix',
     unlockHint: 'Developer Lv.50',
     achievementId: 'skill_developer_50',
   },
@@ -145,15 +169,27 @@ export const FRAMES: Frame[] = [
     color: '#FF6B9D',
     gradient: 'linear-gradient(135deg, #FF6B9D 0%, #C084FC 100%)',
     rarity: 'Epic',
+    style: 'liquid',
     unlockHint: 'Designer Lv.50',
     achievementId: 'skill_designer_50',
+  },
+  {
+    id: 'blaze',
+    name: 'Blaze',
+    color: '#FF6D00',
+    gradient: 'linear-gradient(135deg, #FF6D00 0%, #FF3D00 40%, #DD2C00 70%, #FFD740 100%)',
+    rarity: 'Epic',
+    style: 'glitch',
+    unlockHint: '14-day streak',
+    achievementId: 'streak_14',
   },
   {
     id: 'star',
     name: 'Star',
     color: '#FFD700',
-    gradient: 'linear-gradient(135deg, #FFD700 0%, #FF6B35 100%)',
+    gradient: 'linear-gradient(135deg, #FFD700 0%, #FF6B35 50%, #FF1493 100%)',
     rarity: 'Legendary',
+    style: 'holographic',
     unlockHint: '3 skills at Lv.25+',
     achievementId: 'polymath',
   },
@@ -163,17 +199,9 @@ export const FRAMES: Frame[] = [
     color: '#FF4500',
     gradient: 'linear-gradient(135deg, #FF4500 0%, #FFD700 50%, #FF6B35 100%)',
     rarity: 'Legendary',
+    style: 'flame',
     unlockHint: '30-day streak',
     achievementId: 'streak_30',
-  },
-  {
-    id: 'diamond',
-    name: 'Diamond',
-    color: '#4FC3F7',
-    gradient: 'linear-gradient(135deg, #4FC3F7 0%, #E1F5FE 40%, #4FC3F7 100%)',
-    rarity: 'Rare',
-    unlockHint: 'Complete 10 sessions',
-    achievementId: 'ten_sessions',
   },
   {
     id: 'crown',
@@ -181,28 +209,24 @@ export const FRAMES: Frame[] = [
     color: '#FFD700',
     gradient: 'linear-gradient(135deg, #FFD700 0%, #FFA000 40%, #FF6F00 100%)',
     rarity: 'Legendary',
+    style: 'royal',
     unlockHint: 'Complete 50 sessions',
     achievementId: 'fifty_sessions',
   },
-  // Streak-exclusive frames
-  {
-    id: 'ember',
-    name: 'Ember',
-    color: '#FF8A65',
-    gradient: 'linear-gradient(135deg, #FF8A65 0%, #FF5722 50%, #BF360C 100%)',
-    rarity: 'Rare',
-    unlockHint: '7-day streak',
-    achievementId: 'streak_7',
-  },
-  {
-    id: 'blaze',
-    name: 'Blaze',
-    color: '#FF6D00',
-    gradient: 'linear-gradient(135deg, #FF6D00 0%, #FF3D00 40%, #DD2C00 70%, #FFD740 100%)',
-    rarity: 'Epic',
-    unlockHint: '14-day streak',
-    achievementId: 'streak_14',
-  },
+]
+
+// ─── LOCKED AVATARS ──────────────────────────────────────
+// Some avatars require achievements to unlock.
+
+export const FREE_AVATARS = ['🐺', '🦊', '🐱', '🐼', '🐸', '🤖']
+
+export const LOCKED_AVATARS: { emoji: string; unlockHint: string; achievementId: string }[] = [
+  { emoji: '🔥', unlockHint: '2-day streak', achievementId: 'streak_2' },
+  { emoji: '💀', unlockHint: '50 sessions', achievementId: 'fifty_sessions' },
+  { emoji: '👾', unlockHint: '10 sessions', achievementId: 'ten_sessions' },
+  { emoji: '🦁', unlockHint: '2h+ session', achievementId: 'marathon' },
+  { emoji: '🐙', unlockHint: 'Night Owl', achievementId: 'night_owl' },
+  { emoji: '🦉', unlockHint: 'Early Bird', achievementId: 'early_bird' },
 ]
 
 // ─── LOCAL STORAGE HELPERS ────────────────────────────────
@@ -241,7 +265,11 @@ export function getUnlockedFrames(): string[] {
   try { return JSON.parse(localStorage.getItem(STORAGE_UNLOCKED_FRAMES) || '[]') } catch { return [] }
 }
 
-/** Call when an achievement is unlocked — checks if it grants a badge or frame */
+export function getUnlockedAvatarEmojis(): string[] {
+  try { return JSON.parse(localStorage.getItem('grinder_unlocked_avatars') || '[]') } catch { return [] }
+}
+
+/** Call when an achievement is unlocked — checks if it grants a badge, frame, or avatar */
 export function unlockCosmeticsFromAchievement(achievementId: string): void {
   // Check badges
   const badge = BADGES.find(b => b.achievementId === achievementId)
@@ -257,6 +285,14 @@ export function unlockCosmeticsFromAchievement(achievementId: string): void {
     const current = getUnlockedFrames()
     if (!current.includes(frame.id)) {
       localStorage.setItem(STORAGE_UNLOCKED_FRAMES, JSON.stringify([...current, frame.id]))
+    }
+  }
+  // Check locked avatars
+  const lockedAvatar = LOCKED_AVATARS.find(a => a.achievementId === achievementId)
+  if (lockedAvatar) {
+    const current = getUnlockedAvatarEmojis()
+    if (!current.includes(lockedAvatar.emoji)) {
+      localStorage.setItem('grinder_unlocked_avatars', JSON.stringify([...current, lockedAvatar.emoji]))
     }
   }
 }

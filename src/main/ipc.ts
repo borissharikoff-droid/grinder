@@ -136,6 +136,22 @@ export function registerIpcHandlers() {
     return db.getGoalProgress(goalProgressSchema.parse(goal))
   })
 
+  // Grind Tasks
+  ipcMain.handle('db:getTasks', () => db.getTasks())
+  ipcMain.handle('db:createTask', (_, task: unknown) => {
+    const parsed = task as { id: string; text: string }
+    if (!parsed.id || !parsed.text) throw new Error('Invalid task')
+    return db.createTask(parsed)
+  })
+  ipcMain.handle('db:toggleTask', (_, id: unknown) => db.toggleTask(stringId.parse(id)))
+  ipcMain.handle('db:updateTaskText', (_, id: unknown, text: unknown) => {
+    const parsedId = stringId.parse(id)
+    if (typeof text !== 'string' || !text.trim()) throw new Error('Invalid text')
+    return db.updateTaskText(parsedId, (text as string).trim())
+  })
+  ipcMain.handle('db:deleteTask', (_, id: unknown) => db.deleteTask(stringId.parse(id)))
+  ipcMain.handle('db:clearDoneTasks', () => db.clearDoneTasks())
+
   // Trends
   ipcMain.handle('db:getDailyTotals', (_, days: unknown) => {
     return db.getDailyTotals(positiveInt.parse(days))

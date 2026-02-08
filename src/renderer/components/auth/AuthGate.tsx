@@ -8,7 +8,7 @@ const AVATARS = ['🐺', '🦊', '🐱', '🐼', '🦁', '🐸', '🦉', '🐙',
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { user, loading, init, signIn, signUp } = useAuthStore()
-  const [loginId, setLoginId] = useState('')  // email or nickname
+  const [loginId, setLoginId] = useState('')
   const [password, setPassword] = useState('')
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
@@ -38,7 +38,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center bg-discord-darker">
-        <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }} className="text-2xl">⏳</motion.div>
+        <div className="text-2xl animate-spin">⏳</div>
       </div>
     )
   }
@@ -70,7 +70,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     */
 
     if (isSignUp) {
-      // ── Sign Up ──
       if (!username.trim() || username.length < 3) {
         setError('Username must be 3+ characters')
         setBusy(false)
@@ -100,10 +99,8 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         }
       }
     } else {
-      // ── Sign In — by email or nickname ──
       let loginEmail = loginId.trim()
 
-      // If it doesn't look like an email, resolve nickname → email
       if (!loginEmail.includes('@')) {
         if (!supabase) { setError('Supabase not available'); setBusy(false); return }
         const { data } = await supabase
@@ -116,10 +113,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           setBusy(false)
           return
         }
-        // Get email from auth.users via profile id
-        // We need to try signing in with email — but we don't have it.
-        // Workaround: store email in profiles or use a Supabase function.
-        // For now, try to get it from the profiles table if email is stored there.
         const { data: profileData } = await supabase
           .from('profiles')
           .select('email')
@@ -148,19 +141,17 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
         className="w-full max-w-sm"
       >
         <div className="text-center mb-5">
-          <motion.img
+          <img
             src={mascotImg}
             alt="Grinder"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-            className="w-20 h-20 mx-auto mb-2 drop-shadow-[0_0_20px_rgba(128,90,213,0.5)]"
+            className="w-24 h-24 mx-auto mb-2"
             draggable={false}
           />
-          <h1 className="text-2xl font-mono font-bold text-[#8b5cf6] drop-shadow-[0_0_12px_rgba(139,92,246,0.5)] mb-1 tracking-wider">
+          <h1 className="text-2xl font-mono font-bold text-[#8b5cf6] mb-1 tracking-wider">
             grinder
           </h1>
           <p className="text-gray-400 text-xs">
@@ -176,24 +167,25 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: 'auto', opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
                   className="space-y-3 overflow-hidden"
                 >
                   <div>
                     <label className="text-xs text-gray-400 font-mono block mb-1">Pick your avatar</label>
                     <div className="flex flex-wrap gap-2">
                       {AVATARS.map((a) => (
-                        <motion.button
+                        <button
                           type="button"
                           key={a}
-                          whileTap={{ scale: 0.9 }}
                           onClick={() => setAvatar(a)}
-                          className={`w-9 h-9 rounded-lg text-lg flex items-center justify-center transition-all ${avatar === a
-                            ? 'bg-cyber-neon/20 border-2 border-cyber-neon shadow-glow-sm'
-                            : 'bg-discord-dark border border-white/10 hover:border-white/20'
-                            }`}
+                          className={`w-9 h-9 rounded-lg text-lg flex items-center justify-center transition-all active:scale-90 ${
+                            avatar === a
+                              ? 'bg-cyber-neon/20 border-2 border-cyber-neon shadow-glow-sm'
+                              : 'bg-discord-dark border border-white/10 hover:border-white/20'
+                          }`}
                         >
                           {a}
-                        </motion.button>
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -223,7 +215,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
               )}
             </AnimatePresence>
 
-            {/* Login field — email or nickname */}
             {!isSignUp && (
               <input
                 type="text"
@@ -245,7 +236,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
               className="w-full rounded-lg bg-discord-darker border border-white/10 px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:border-discord-accent outline-none"
             />
             {error && <p className="text-discord-red text-xs">{error}</p>}
-            {/* Remember Me */}
             {!isSignUp && (
               <div className="flex items-center gap-2 px-1">
                 <input
@@ -264,8 +254,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             <motion.button
               type="submit"
               disabled={busy}
-              whileTap={{ scale: 0.98 }}
-              className="w-full py-3 rounded-xl bg-cyber-neon text-discord-darker font-bold text-sm hover:shadow-glow disabled:opacity-50 transition-shadow"
+              className="w-full py-3 rounded-xl bg-cyber-neon text-discord-darker font-bold text-sm hover:shadow-glow disabled:opacity-50 transition-shadow active:scale-[0.98]"
             >
               {busy ? '...' : isSignUp ? 'Create account' : 'Sign in'}
             </motion.button>

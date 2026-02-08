@@ -15,6 +15,7 @@ import { LootDrop } from './components/alerts/LootDrop'
 import { UpdateBanner } from './components/UpdateBanner'
 import { useSessionStore } from './stores/sessionStore'
 import { categoryToSkillId, getSkillById } from './lib/skills'
+import { warmUpAudio } from './lib/sounds'
 
 export type TabId = 'home' | 'skills' | 'stats' | 'profile' | 'friends' | 'settings'
 
@@ -39,25 +40,32 @@ export default function App() {
   useProfileSync()
   useKeyboardShortcuts()
 
+  // Pre-warm audio context on first user gesture
+  useEffect(() => {
+    const handler = () => {
+      warmUpAudio()
+      window.removeEventListener('pointerdown', handler)
+    }
+    window.addEventListener('pointerdown', handler, { once: true })
+    return () => window.removeEventListener('pointerdown', handler)
+  }, [])
+
   // Check streak once on app startup
   useEffect(() => {
     if (_streakDoneThisSession) return
-    _streakDoneThisSession = true // set IMMEDIATELY before any async work
+    _streakDoneThisSession = true
 
     const checkStreak = async () => {
       const api = window.electronAPI
       if (!api?.db?.getStreak || !api?.db?.getLocalStat || !api?.db?.setLocalStat) return
 
-      const today = new Date().toLocaleDateString('sv-SE') // YYYY-MM-DD local
-
-      // Check browser storage first (redundancy)
+      const today = new Date().toLocaleDateString('sv-SE')
       const browserStoredDate = localStorage.getItem('streak_shown_date')
       if (browserStoredDate === today) return
 
       try {
         const savedDate = await api.db.getLocalStat('streak_shown_date')
         if (savedDate === today) {
-          // Sync browser storage if missing
           localStorage.setItem('streak_shown_date', today)
           return
         }
@@ -65,7 +73,7 @@ export default function App() {
         const streak = await api.db.getStreak()
         if (streak >= 2) {
           await api.db.setLocalStat('streak_shown_date', today)
-          localStorage.setItem('streak_shown_date', today) // Update browser storage too
+          localStorage.setItem('streak_shown_date', today)
           setStreakCount(streak)
           setShowStreak(true)
         }
@@ -104,7 +112,6 @@ export default function App() {
             <StreakOverlay streak={streakCount} onClose={() => setShowStreak(false)} />
           )}
         </AnimatePresence>
-        {/* Global loot drop overlay */}
         <LootDrop />
       </div>
     </AuthGate>

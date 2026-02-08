@@ -37,27 +37,20 @@ export function SessionComplete() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-        className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
+        transition={{ duration: 0.25 }}
+        className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
         onClick={handleDismiss}
       >
         <motion.div
-          initial={{ scale: 0.85, opacity: 0, y: 16 }}
-          animate={{ scale: 1, opacity: 1, y: 0 }}
-          exit={{ scale: 0.9, opacity: 0, y: 8 }}
-          transition={{ type: 'spring', damping: 24, stiffness: 280, mass: 0.8 }}
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0.95, opacity: 0 }}
+          transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
           onClick={(e) => e.stopPropagation()}
           className="w-full max-w-[280px] rounded-2xl bg-discord-card border border-cyber-neon/30 shadow-glow overflow-hidden"
         >
           <div className="px-5 pt-5 pb-3 text-center">
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ delay: 0.1, type: 'spring', stiffness: 200 }}
-              className="text-3xl mb-2"
-            >
-              🎉
-            </motion.div>
+            <div className="text-3xl mb-2">🎉</div>
             <h3 className="text-base font-bold text-cyber-neon mb-0.5">GG, grind complete!</h3>
             {lastSessionSummary && (
               <p className="text-white text-lg font-mono font-bold">
@@ -81,24 +74,16 @@ export function SessionComplete() {
                     </motion.span>
                   )}
                 </div>
-                {/* Levels gained */}
-                {levelBefore > 0 && liveXP > 0 && (() => {
-                  // Calculate current level from liveXP
-                  const levelsGained = sessionRewards.length > 0 ? sessionRewards.filter(r => r.title).length : 0
-                  if (levelsGained > 0) {
-                    return (
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: 0.4 }}
-                        className="text-[10px] text-cyber-neon font-medium"
-                      >
-                        +{levelsGained} level{levelsGained > 1 ? 's' : ''} gained!
-                      </motion.div>
-                    )
-                  }
-                  return null
-                })()}
+                {levelBefore > 0 && liveXP > 0 && sessionRewards.filter(r => r.title).length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: 0.4 }}
+                    className="text-[10px] text-cyber-neon font-medium"
+                  >
+                    +{sessionRewards.filter(r => r.title).length} level{sessionRewards.filter(r => r.title).length > 1 ? 's' : ''} gained!
+                  </motion.div>
+                )}
               </div>
             )}
 
@@ -132,8 +117,7 @@ export function SessionComplete() {
                       key={g.skillId}
                       initial={{ opacity: 0, x: -6 }}
                       animate={{ opacity: 1, x: 0 }}
-                      className={`rounded-lg px-2.5 py-2 border ${leveledUp ? 'bg-cyber-neon/10 border-cyber-neon/40 shadow-[0_0_12px_rgba(0,255,136,0.2)]' : 'bg-discord-dark/50 border-white/10'
-                        }`}
+                      className={`rounded-lg px-2.5 py-2 border ${leveledUp ? 'bg-cyber-neon/10 border-cyber-neon/40 shadow-[0_0_12px_rgba(0,255,136,0.2)]' : 'bg-discord-dark/50 border-white/10'}`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-lg">{skill.icon}</span>

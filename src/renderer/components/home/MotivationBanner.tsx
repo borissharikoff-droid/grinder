@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 
 const GREETINGS = [
   { text: 'Time to lock in.', sub: 'Hit GRIND and enter the zone.' },
@@ -35,32 +34,26 @@ export function MotivationBanner({ isRunning }: { isRunning: boolean }) {
     return () => clearInterval(interval)
   }, [isRunning])
 
+  // Simple CSS crossfade — no AnimatePresence, no sequential exit→enter
   return (
-    <AnimatePresence mode="wait">
-      {isRunning ? (
-        <motion.p
-          key={runMsg}
-          initial={{ opacity: 0, y: 6, filter: 'blur(4px)' }}
-          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-          exit={{ opacity: 0, y: -6, filter: 'blur(4px)' }}
-          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-          className="text-xs text-gray-500 font-mono text-center"
-        >
-          {runMsg}
-        </motion.p>
-      ) : (
-        <motion.div
-          key="idle"
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-          className="text-center"
-        >
-          <p className="text-white text-sm font-medium">{msg.text}</p>
-          <p className="text-gray-500 text-xs mt-0.5">{msg.sub}</p>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <div className="relative h-10 flex items-center justify-center">
+      {/* Idle message */}
+      <div
+        className={`text-center transition-opacity duration-150 ${
+          isRunning ? 'opacity-0 pointer-events-none absolute' : 'opacity-100'
+        }`}
+      >
+        <p className="text-white text-sm font-medium">{msg.text}</p>
+        <p className="text-gray-500 text-xs mt-0.5">{msg.sub}</p>
+      </div>
+      {/* Running message */}
+      <p
+        className={`text-xs text-gray-500 font-mono text-center transition-opacity duration-150 ${
+          isRunning ? 'opacity-100' : 'opacity-0 pointer-events-none absolute'
+        }`}
+      >
+        {runMsg}
+      </p>
+    </div>
   )
 }

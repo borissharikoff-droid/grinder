@@ -7,15 +7,7 @@ import type { AchievementDef } from '../../lib/xp'
 import { useAlertStore } from '../../stores/alertStore'
 import { playClickSound } from '../../lib/sounds'
 import { detectPersona } from '../../lib/persona'
-import { BADGES, FRAMES, getUnlockedBadges, getUnlockedFrames, getEquippedBadges, getEquippedFrame, equipBadge, unequipBadge, equipFrame } from '../../lib/cosmetics'
-
-const BASE_AVATARS = ['🐺', '🦊', '🐱', '🐼', '🦁', '🐸', '🦉', '🐙', '🔥', '💀', '🤖', '👾']
-
-function getUnlockedAvatars(): string[] {
-  try {
-    return JSON.parse(localStorage.getItem('grinder_unlocked_avatars') || '[]') as string[]
-  } catch { return [] }
-}
+import { BADGES, FRAMES, FREE_AVATARS, LOCKED_AVATARS, getUnlockedBadges, getUnlockedFrames, getEquippedBadges, getEquippedFrame, equipBadge, unequipBadge, equipFrame, getUnlockedAvatarEmojis } from '../../lib/cosmetics'
 
 const CATEGORY_LABELS: Record<string, string> = {
   grind: '⚡ Grind',
@@ -35,7 +27,8 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
   const [username, setUsername] = useState('')
   const [avatar, setAvatar] = useState('🤖')
   const [originalUsername, setOriginalUsername] = useState('')
-  const [originalAvatar, setOriginalAvatar] = useState('')
+  const [originalAvatar, setOriginalAvatar] = useState('🤖')
+  const [profileLoaded, setProfileLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
 
@@ -66,7 +59,10 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
           setOriginalUsername(data.username || '')
           setOriginalAvatar(data.avatar_url || '🤖')
         }
-      })
+        setProfileLoaded(true)
+      }).catch(() => setProfileLoaded(true))
+    } else {
+      setProfileLoaded(true)
     }
 
     // Load local stats
@@ -100,7 +96,7 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
   const level = levelFromTotalXP(totalXP)
   const { current, needed } = xpProgressInLevel(totalXP)
   const pct = Math.min(100, (current / needed) * 100)
-  const hasChanges = username !== originalUsername || avatar !== originalAvatar
+  const hasChanges = profileLoaded && (username !== originalUsername || avatar !== originalAvatar)
 
   const saveProfile = async () => {
     if (!supabase || !user || !hasChanges) return
@@ -190,11 +186,8 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
   const unlockedCount = ACHIEVEMENTS.filter(a => unlockedIds.includes(a.id)).length
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="p-4 pb-20 space-y-4 overflow-auto"
+    <div
+      className={`p-4 pb-20 space-y-4 overflow-auto transition-opacity duration-150 ${profileLoaded ? 'opacity-100' : 'opacity-0'}`}
     >
       {/* Header */}
       <div className="flex items-center gap-3">
@@ -317,21 +310,63 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
             <div className="rounded-xl bg-discord-card/80 border border-white/10 p-4 space-y-3">
               <p className="text-[10px] uppercase tracking-wider text-gray-500 font-mono">Avatar</p>
               <div className="flex flex-wrap gap-1.5">
-                {[...BASE_AVATARS, ...getUnlockedAvatars().filter(a => !BASE_AVATARS.includes(a))].map((a) => (
-                  <motion.button
+                {/* Free avatars */}
+                {FREE_AVATARS.map((a) => (
+                  <button
                     type="button"
                     key={a}
-                    whileTap={{ scale: 0.9 }}
                     onClick={() => { setAvatar(a); playClickSound() }}
-                    className={`w-9 h-9 rounded-lg text-lg flex items-center justify-center transition-all ${
+                    className={`w-9 h-9 rounded-lg text-lg flex items-center justify-center transition-all active:scale-90 ${
                       avatar === a
                         ? 'bg-cyber-neon/20 border-2 border-cyber-neon shadow-glow-sm'
                         : 'bg-discord-dark border border-white/10 hover:border-white/20'
                     }`}
                   >
                     {a}
-                  </motion.button>
+                  </button>
                 ))}
+                {/* Locked avatars */}
+                {LOCKED_AVATARS.map((la) => {
+                  const isUnlocked = unlockedIds.includes(la.achievementId) || getUnlockedAvatarEmojis().includes(la.emoji)
+                  return (
+                    <button
+                      type="button"
+                      key={la.emoji}
+                      onClick={() => { if (isUnlocked) { setAvatar(la.emoji); playClickSound() } }}
+                      disabled={!isUnlocked}
+                      title={isUnlocked ? la.emoji : la.unlockHint}
+                      className={`w-9 h-9 rounded-lg text-lg flex items-center justify-center transition-all relative ${
+                        isUnlocked
+                          ? avatar === la.emoji
+                            ? 'bg-cyber-neon/20 border-2 border-cyber-neon shadow-glow-sm active:scale-90'
+                            : 'bg-discord-dark border border-white/10 hover:border-white/20 active:scale-90'
+                          : 'bg-discord-dark/50 border border-white/5 cursor-not-allowed'
+                      }`}
+                    >
+                      <span style={{ opacity: isUnlocked ? 1 : 0.25 }}>{la.emoji}</span>
+                      {!isUnlocked && (
+                        <span className="absolute inset-0 flex items-center justify-center text-[10px]">🔒</span>
+                      )}
+                    </button>
+                  )
+                })}
+                {/* Bonus avatars (unlocked outside base set) */}
+                {getUnlockedAvatarEmojis()
+                  .filter(a => !FREE_AVATARS.includes(a) && !LOCKED_AVATARS.some(la => la.emoji === a))
+                  .map((a) => (
+                    <button
+                      type="button"
+                      key={a}
+                      onClick={() => { setAvatar(a); playClickSound() }}
+                      className={`w-9 h-9 rounded-lg text-lg flex items-center justify-center transition-all active:scale-90 ${
+                        avatar === a
+                          ? 'bg-cyber-neon/20 border-2 border-cyber-neon shadow-glow-sm'
+                          : 'bg-discord-dark border border-white/10 hover:border-white/20'
+                      }`}
+                    >
+                      {a}
+                    </button>
+                  ))}
               </div>
             </div>
 
@@ -456,39 +491,66 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
                 <p className="text-[10px] uppercase tracking-wider text-gray-500 font-mono">Badges</p>
                 <p className="text-[9px] text-gray-600 font-mono">{equippedBadges.length}/3 equipped</p>
               </div>
-              <p className="text-[10px] text-gray-500">Visible to friends & leaderboard. Tap to equip/unequip.</p>
+              <p className="text-[10px] text-gray-500">Shown next to your name. Tap to equip/unequip.</p>
               <div className="grid grid-cols-2 gap-2">
                 {BADGES.map((badge) => {
                   const isUnlocked = unlockedBadgeIds.includes(badge.id)
                   const isEquipped = equippedBadges.includes(badge.id)
                   return (
-                    <motion.button
+                    <button
                       key={badge.id}
-                      whileTap={isUnlocked ? { scale: 0.95 } : undefined}
                       onClick={() => isUnlocked && handleEquipBadge(badge.id)}
                       disabled={!isUnlocked}
-                      className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden ${
+                      className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden active:scale-[0.97] ${
                         isEquipped
-                          ? 'border-cyber-neon/40 bg-cyber-neon/5'
+                          ? 'bg-discord-dark/80'
                           : isUnlocked
                             ? 'border-white/10 bg-discord-dark/50 hover:border-white/20'
-                            : 'border-white/5 bg-discord-dark/30 opacity-40 cursor-not-allowed'
+                            : 'border-white/[0.06] bg-discord-dark/30'
                       }`}
+                      style={{
+                        borderColor: isEquipped ? `${badge.color}50` : undefined,
+                        boxShadow: isEquipped ? `0 0 20px ${badge.color}20` : undefined,
+                      }}
                     >
                       {isEquipped && (
                         <div className="absolute top-1.5 right-1.5">
-                          <span className="text-[8px] text-cyber-neon font-mono font-bold">ON</span>
+                          <span className="text-[8px] font-mono font-bold" style={{ color: badge.color }}>ON</span>
                         </div>
                       )}
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-base">{isUnlocked ? badge.icon : '🔒'}</span>
-                        <span className={`text-[11px] font-semibold ${isUnlocked ? 'text-white' : 'text-gray-500'}`}>{badge.name}</span>
+                      <div className="flex items-center gap-2.5 mb-1">
+                        {/* Badge preview — always colorful */}
+                        <div
+                          className="w-9 h-9 rounded-lg flex items-center justify-center text-base shrink-0 border"
+                          style={{
+                            borderColor: `${badge.color}${isUnlocked ? '60' : '30'}`,
+                            backgroundColor: `${badge.color}${isUnlocked ? '18' : '0a'}`,
+                            boxShadow: isEquipped ? `0 0 12px ${badge.color}40` : `0 0 8px ${badge.color}10`,
+                          }}
+                        >
+                          <span style={{ opacity: isUnlocked ? 1 : 0.6 }}>{badge.icon}</span>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <span className={`text-[11px] font-semibold block ${isUnlocked ? 'text-white' : 'text-gray-400'}`}>{badge.name}</span>
+                          {/* Preview: how badge looks next to name */}
+                          <span
+                            className="inline-block text-[8px] px-1 py-[1px] rounded font-medium mt-0.5"
+                            style={{
+                              borderWidth: 1,
+                              borderColor: `${badge.color}${isUnlocked ? '40' : '20'}`,
+                              backgroundColor: `${badge.color}${isUnlocked ? '15' : '08'}`,
+                              color: isUnlocked ? badge.color : `${badge.color}80`,
+                            }}
+                          >
+                            {badge.icon} {badge.label}
+                          </span>
+                        </div>
                       </div>
-                      <p className="text-[9px] text-gray-500">{badge.description}</p>
+                      <p className={`text-[9px] leading-tight ${isUnlocked ? 'text-gray-400' : 'text-gray-500'}`}>{badge.description}</p>
                       {!isUnlocked && (
-                        <p className="text-[8px] text-gray-600 font-mono mt-1">{badge.unlockHint}</p>
+                        <p className="text-[8px] font-mono mt-0.5" style={{ color: `${badge.color}60` }}>{badge.unlockHint}</p>
                       )}
-                    </motion.button>
+                    </button>
                   )
                 })}
               </div>
@@ -496,48 +558,87 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
 
             {/* Frames section */}
             <div className="rounded-xl bg-discord-card/80 border border-white/10 p-4 space-y-3">
-              <p className="text-[10px] uppercase tracking-wider text-gray-500 font-mono">Profile Frames</p>
-              <p className="text-[10px] text-gray-500">Limited frames from achievements. Tap to equip.</p>
-              <div className="grid grid-cols-3 gap-2">
+              <p className="text-[10px] uppercase tracking-wider text-gray-500 font-mono">Avatar Frames</p>
+              <p className="text-[10px] text-gray-500">Exclusive borders. Tap to equip.</p>
+              <div className="grid grid-cols-2 gap-3">
                 {FRAMES.map((frame) => {
                   const isUnlocked = unlockedFrameIds.includes(frame.id)
                   const isActive = equippedFrameId === frame.id
+                  const rarityColors: Record<string, string> = { Rare: '#4FC3F7', Epic: '#C084FC', Legendary: '#FFD700' }
+                  const styleClass = `frame-style-${frame.style}`
                   return (
-                    <motion.button
+                    <button
                       key={frame.id}
-                      whileTap={isUnlocked ? { scale: 0.95 } : undefined}
                       onClick={() => isUnlocked && handleEquipFrame(frame.id)}
                       disabled={!isUnlocked}
-                      className={`p-3 rounded-xl border text-center transition-all ${
+                      className={`relative p-3 rounded-2xl border text-center transition-all active:scale-[0.96] overflow-hidden ${styleClass} ${
                         isActive
-                          ? 'bg-discord-card shadow-lg'
+                          ? 'bg-discord-dark/90'
                           : isUnlocked
-                            ? 'border-white/10 bg-discord-dark/50 hover:border-white/20'
-                            : 'border-white/5 bg-discord-dark/30 opacity-40 cursor-not-allowed'
+                            ? 'border-white/10 bg-discord-dark/60 hover:border-white/20'
+                            : 'border-white/[0.06] bg-discord-dark/40'
                       }`}
-                      style={isActive ? { borderColor: frame.color, boxShadow: `0 0 15px ${frame.color}30` } : undefined}
+                      style={{
+                        borderColor: isActive ? `${frame.color}60` : undefined,
+                        boxShadow: isActive ? `0 0 25px ${frame.color}30, inset 0 0 20px ${frame.color}08` : undefined,
+                      }}
                     >
-                      {/* Frame preview */}
-                      <div className="relative mx-auto w-12 h-12 mb-1.5">
-                        {isUnlocked && (
-                          <div
-                            className="absolute -inset-1 rounded-xl"
-                            style={{ background: frame.gradient, opacity: isActive ? 0.9 : 0.4 }}
-                          />
-                        )}
+                      {/* Background gradient wash */}
+                      <div
+                        className="absolute inset-0 rounded-2xl pointer-events-none"
+                        style={{
+                          background: frame.gradient,
+                          opacity: isActive ? 0.1 : 0.05,
+                        }}
+                      />
+
+                      {/* Frame avatar preview */}
+                      <div className="relative mx-auto w-16 h-16 mb-2">
+                        {/* Style-specific animated ring */}
                         <div
-                          className="relative w-12 h-12 rounded-lg bg-discord-darker flex items-center justify-center text-xl border"
-                          style={isUnlocked ? { borderColor: `${frame.color}80` } : { borderColor: 'rgba(255,255,255,0.05)' }}
+                          className="frame-ring absolute -inset-2 rounded-2xl"
+                          style={{
+                            background: frame.gradient,
+                            opacity: isUnlocked ? (isActive ? 0.9 : 0.65) : 0.3,
+                            filter: !isUnlocked ? 'saturate(0.4) brightness(0.7)' : undefined,
+                            borderColor: frame.color,
+                            color: frame.color,
+                          }}
+                        />
+                        {/* Avatar container */}
+                        <div
+                          className="frame-avatar relative w-16 h-16 rounded-xl bg-discord-darker flex items-center justify-center text-2xl border-2"
+                          style={{ borderColor: `${frame.color}${isUnlocked ? 'b0' : '50'}` }}
                         >
-                          {isUnlocked ? avatar : '🔒'}
+                          {avatar}
                         </div>
+                        {/* Lock overlay */}
+                        {!isUnlocked && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-xl">
+                            <span className="text-xl drop-shadow-lg">🔒</span>
+                          </div>
+                        )}
+                        {/* Equipped checkmark */}
+                        {isActive && (
+                          <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold" style={{ backgroundColor: frame.color, color: '#111' }}>
+                            ✓
+                          </div>
+                        )}
                       </div>
-                      <p className={`text-[10px] font-medium ${isUnlocked ? 'text-white' : 'text-gray-500'}`}>{frame.name}</p>
-                      <p className="text-[8px] text-gray-600">{frame.rarity}</p>
+
+                      {/* Info */}
+                      <p className={`text-[11px] font-bold relative ${isUnlocked ? 'text-white' : 'text-gray-300'}`}>{frame.name}</p>
+                      <p className="text-[8px] text-gray-500 relative capitalize">{frame.style}</p>
+                      <p
+                        className="text-[9px] font-bold uppercase tracking-wider relative"
+                        style={{ color: rarityColors[frame.rarity] }}
+                      >
+                        {frame.rarity === 'Legendary' ? '★ ' : frame.rarity === 'Epic' ? '◆ ' : '● '}{frame.rarity}
+                      </p>
                       {!isUnlocked && (
-                        <p className="text-[7px] text-gray-700 font-mono mt-0.5">{frame.unlockHint}</p>
+                        <p className="text-[8px] font-mono mt-1 relative" style={{ color: `${frame.color}90` }}>{frame.unlockHint}</p>
                       )}
-                    </motion.button>
+                    </button>
                   )
                 })}
               </div>
@@ -545,6 +646,6 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </div>
   )
 }

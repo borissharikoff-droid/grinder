@@ -68,6 +68,12 @@ function getDb(): Database.Database {
         recorded_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_skill_xp_log_skill ON skill_xp_log(skill_id, recorded_at);
+      CREATE TABLE IF NOT EXISTS grind_tasks (
+        id TEXT PRIMARY KEY,
+        text TEXT NOT NULL,
+        done INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS session_checkpoint (
         id TEXT PRIMARY KEY,
         session_id TEXT NOT NULL,
@@ -409,6 +415,26 @@ export function getDatabaseApi() {
     },
     clearCheckpoint(): void {
       database.prepare('DELETE FROM session_checkpoint WHERE id = ?').run('current')
+    },
+
+    // ── Grind Tasks (checklist goals) ──
+    getTasks(): { id: string; text: string; done: number; created_at: number }[] {
+      return database.prepare('SELECT * FROM grind_tasks ORDER BY done ASC, created_at DESC').all() as { id: string; text: string; done: number; created_at: number }[]
+    },
+    createTask(task: { id: string; text: string }): void {
+      database.prepare('INSERT INTO grind_tasks (id, text, done, created_at) VALUES (?, ?, 0, ?)').run(task.id, task.text, Date.now())
+    },
+    toggleTask(id: string): void {
+      database.prepare('UPDATE grind_tasks SET done = CASE WHEN done = 0 THEN 1 ELSE 0 END WHERE id = ?').run(id)
+    },
+    updateTaskText(id: string, text: string): void {
+      database.prepare('UPDATE grind_tasks SET text = ? WHERE id = ?').run(text, id)
+    },
+    deleteTask(id: string): void {
+      database.prepare('DELETE FROM grind_tasks WHERE id = ?').run(id)
+    },
+    clearDoneTasks(): void {
+      database.prepare('DELETE FROM grind_tasks WHERE done = 1').run()
     },
   }
 }
