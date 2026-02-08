@@ -53,9 +53,9 @@ export function HomePage({ onNavigateProfile }: HomePageProps) {
     <div className="flex flex-col h-full">
       <ProfileBar onNavigateProfile={onNavigateProfile} />
 
-      <div className="flex-1 flex flex-col items-center justify-center p-4">
-        {/* Top: mascot + banner — no AnimatePresence on running transition */}
-        <div className="flex flex-col items-center w-full px-4 mb-8">
+      <div className="flex-1 flex flex-col items-center justify-start pt-4 pb-4 px-4 gap-6">
+        {/* Top: mascot + banner */}
+        <div className="flex flex-col items-center w-full px-2">
           {showWelcome && status === 'idle' ? (
             <WelcomeBanner onDismiss={handleDismissWelcome} />
           ) : (
@@ -63,7 +63,7 @@ export function HomePage({ onNavigateProfile }: HomePageProps) {
               <img
                 src={mascotImg}
                 alt=""
-                className="w-16 h-16 mb-4"
+                className="w-16 h-16 mb-3"
                 draggable={false}
               />
               <MotivationBanner isRunning={status !== 'idle'} />
@@ -72,12 +72,12 @@ export function HomePage({ onNavigateProfile }: HomePageProps) {
         </div>
 
         {/* Timer */}
-        <div className="mb-8">
+        <div className="flex flex-col items-center">
           <Timer />
         </div>
 
         {/* Controls */}
-        <div className="mb-8">
+        <div className="flex flex-col items-center">
           <SessionControls glowPulse={showWelcome && status === 'idle'} />
           <AnimatePresence>
             {status !== 'idle' && (
@@ -103,7 +103,8 @@ export function HomePage({ onNavigateProfile }: HomePageProps) {
           </AnimatePresence>
         </div>
 
-        <div className="flex flex-col items-center gap-5 w-full max-w-xs">
+        {/* Goal — same gap as other blocks */}
+        <div className="flex flex-col items-center w-full max-w-xs">
           <GoalWidget />
         </div>
       </div>
