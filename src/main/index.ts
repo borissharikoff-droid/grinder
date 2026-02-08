@@ -63,8 +63,28 @@ function createWindow() {
     resizable: true,
   })
 
+  const devServerUrl = 'http://localhost:5173'
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173')
+    mainWindow.loadURL(devServerUrl).catch(() => {})
+    mainWindow.webContents.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL) => {
+      if (errorCode === -6 || errorDescription?.includes('REFUSED')) {
+        mainWindow?.webContents.loadURL(
+          'data:text/html;charset=utf-8,' +
+          encodeURIComponent(`
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Grinder</title></head>
+<body style="margin:0;min-height:100vh;background:#11111b;color:#a1a1aa;font-family:system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;box-sizing:border-box">
+  <div style="text-align:center;max-width:320px">
+    <p style="font-size:48px;margin:0 0 16px">🔌</p>
+    <h1 style="color:#fff;font-size:18px;margin:0 0 8px">Connection Failed</h1>
+    <p style="font-size:13px;margin:0 0 20px;line-height:1.5">Dev server is not running. Start it from the project folder:</p>
+    <code style="display:block;background:#1e1e2e;padding:12px 16px;border-radius:8px;font-size:12px;margin-bottom:20px;text-align:left;color:#00ff88">npm run electron:dev</code>
+    <button onclick="window.location.href='${devServerUrl}'" style="background:#00ff88;color:#111;border:none;padding:10px 20px;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px">Retry</button>
+  </div>
+</body></html>`)
+        )
+      }
+    })
     mainWindow.webContents.openDevTools()
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
