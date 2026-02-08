@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import { AuthGate } from './components/auth/AuthGate'
-import { useProfileSync } from './hooks/useProfileSync'
+import { useProfileSync, usePresenceSync } from './hooks/useProfileSync'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { BottomNav } from './components/layout/BottomNav'
 import { HomePage } from './components/home/HomePage'
@@ -13,6 +13,8 @@ import { SkillsPage } from './components/skills/SkillsPage'
 import { StreakOverlay } from './components/animations/StreakOverlay'
 import { LootDrop } from './components/alerts/LootDrop'
 import { UpdateBanner } from './components/UpdateBanner'
+import { useSessionStore } from './stores/sessionStore'
+import { categoryToSkillId, getSkillById } from './lib/skills'
 
 export type TabId = 'home' | 'skills' | 'stats' | 'profile' | 'friends' | 'settings'
 
@@ -23,6 +25,17 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('home')
   const [showStreak, setShowStreak] = useState(false)
   const [streakCount, setStreakCount] = useState(0)
+
+  // Global presence: always is_online while app is open
+  const { status, currentActivity } = useSessionStore()
+  const presenceLabel = currentActivity && status === 'running'
+    ? (() => {
+      const skill = getSkillById(categoryToSkillId(currentActivity.category))
+      return skill ? `Leveling ${skill.name}` : null
+    })()
+    : null
+  usePresenceSync(presenceLabel, status === 'running')
+
   useProfileSync()
   useKeyboardShortcuts()
 
@@ -41,7 +54,7 @@ export default function App() {
         setStreakCount(streak)
         setShowStreak(true)
       }
-    }).catch(() => {})
+    }).catch(() => { })
   }, [])
 
   const handleNavigateProfile = useCallback(() => setActiveTab('profile'), [])

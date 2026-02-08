@@ -11,15 +11,13 @@ import { GoalWidget } from './GoalWidget'
 import { XPPopup } from './XPPopup'
 import { LevelUpModal } from './LevelUpModal'
 import { useSessionStore } from '../../stores/sessionStore'
-import { usePresenceSync } from '../../hooks/useProfileSync'
-import { categoryToSkillId, getSkillById } from '../../lib/skills'
 
 interface HomePageProps {
   onNavigateProfile: () => void
 }
 
 export function HomePage({ onNavigateProfile }: HomePageProps) {
-  const { showComplete, setCurrentActivity, status, currentActivity, liveXP, pendingLevelUp } = useSessionStore()
+  const { showComplete, setCurrentActivity, status, liveXP, pendingLevelUp } = useSessionStore()
   const [showWelcome, setShowWelcome] = useState(false)
 
   // Check if user is new (never started a grind)
@@ -45,15 +43,6 @@ export function HomePage({ onNavigateProfile }: HomePageProps) {
     localStorage.setItem('grinder_welcomed', '1')
     setShowWelcome(false)
   }
-
-  // Sync "Leveling X" so friends see skill being leveled
-  const presenceLabel = currentActivity && status === 'running'
-    ? (() => {
-      const skill = getSkillById(categoryToSkillId(currentActivity.category))
-      return skill ? `Leveling ${skill.name}` : null
-    })()
-    : null
-  usePresenceSync(presenceLabel, status === 'running')
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.electronAPI?.tracker?.onActivityUpdate) return
