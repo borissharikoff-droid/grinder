@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { SKILLS, skillLevelFromXP, skillXPProgress, formatSkillTime, categoryToSkillId } from '../../lib/skills'
 import { useSessionStore } from '../../stores/sessionStore'
@@ -18,8 +18,18 @@ export function SkillsPage() {
   const [skillData, setSkillData] = useState<SkillRow[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const { status, currentActivity } = useSessionStore()
+  const { status, currentActivity, sessionSkillXP } = useSessionStore()
   const levelingSkillId = status === 'running' && currentActivity ? categoryToSkillId(currentActivity.category) : null
+
+  const liveById = useMemo(() => {
+    const base = new Map(skillData.map((r) => [r.skill_id, r.total_xp]))
+    if (status === 'running') {
+      for (const [id, xp] of Object.entries(sessionSkillXP)) {
+        base.set(id, (base.get(id) ?? 0) + xp)
+      }
+    }
+    return base
+  }, [skillData, status, sessionSkillXP])
 
   const load = async () => {
     setLoading(true)
@@ -40,8 +50,7 @@ export function SkillsPage() {
 
   useEffect(() => { load() }, [])
 
-  const byId = new Map(skillData.map((r) => [r.skill_id, r.total_xp]))
-  const totalLevel = SKILLS.reduce((sum, s) => sum + skillLevelFromXP(byId.get(s.id) ?? 0), 0)
+  const totalLevel = SKILLS.reduce((sum, s) => sum + skillLevelFromXP(liveById.get(s.id) ?? 0), 0)
 
   // Качаемый скилл — наверх, остальные ниже
   const levelingFirst = levelingSkillId
@@ -83,7 +92,7 @@ export function SkillsPage() {
       {levelingSkillId && (() => {
         const skill = SKILLS.find((s) => s.id === levelingSkillId)
         if (!skill) return null
-        const xp = byId.get(skill.id) ?? 0
+        const xp = liveById.get(skill.id) ?? 0
         const level = skillLevelFromXP(xp)
         const { current, needed } = skillXPProgress(xp)
         const pct = needed > 0 ? Math.min(100, (current / needed) * 100) : 100
@@ -200,7 +209,7 @@ export function SkillsPage() {
         {levelingFirst
           .filter((s) => s.id !== levelingSkillId)
           .map((skill, i) => {
-          const xp = byId.get(skill.id) ?? 0
+          const xp = liveById.get(skill.id) ?? 0
           const level = skillLevelFromXP(xp)
           const { current, needed } = skillXPProgress(xp)
           const pct = needed > 0 ? Math.min(100, (current / needed) * 100) : 100

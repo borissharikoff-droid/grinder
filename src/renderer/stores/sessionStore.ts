@@ -6,7 +6,7 @@ import { processAchievementsElectron } from '../services/achievementService'
 import { syncSkillsToSupabase, syncSessionToSupabase } from '../services/supabaseSync'
 import { useAlertStore } from './alertStore'
 import { getAchievementById, levelFromTotalXP, getRewardsInRange, LevelReward } from '../lib/xp'
-import { categoryToSkillId } from '../lib/skills'
+import { categoryToSkillId, skillLevelFromXP } from '../lib/skills'
 
 type SessionStatus = 'idle' | 'running' | 'paused'
 
@@ -53,6 +53,13 @@ interface SessionStore {
   sessionRewards: LevelReward[]
   /** XP per skill this session (for live display during grind; 1 per second in current category) */
   sessionSkillXP: Record<string, number>
+  /** Skill XP at session start (for level-up detection and live display) */
+  skillXPAtStart: Record<string, number>
+  /** Skill levels we've already shown level-up for this session */
+  skillLevelNotified: Record<string, number>
+  /** Pending skill level-up to show modal */
+  pendingSkillLevelUpSkill: { skillId: string; level: number } | null
+  dismissSkillLevelUp: () => void
   tick: () => void
   start: () => void
   stop: () => void
@@ -275,17 +282,35 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   pendingLevelUp: null,
   sessionRewards: [],
   sessionSkillXP: {},
+  skillXPAtStart: {},
+  skillLevelNotified: {},
+  pendingSkillLevelUpSkill: null,
   isGrindPageActive: true,
   setGrindPageActive: (v) => set({ isGrindPageActive: v }),
 
   tick() {
-    const { sessionStartTime, status, currentActivity, sessionSkillXP } = get()
+    const { sessionStartTime, status, currentActivity, sessionSkillXP, skillXPAtStart, skillLevelNotified } = get()
     if (!sessionStartTime) return
     const elapsed = Math.floor((Date.now() - sessionStartTime - pausedAccumulated) / 1000)
-    const updates: { elapsedSeconds: number; sessionSkillXP?: Record<string, number> } = { elapsedSeconds: Math.max(0, elapsed) }
+    const updates: {
+      elapsedSeconds: number
+      sessionSkillXP?: Record<string, number>
+      pendingSkillLevelUpSkill?: { skillId: string; level: number } | null
+      skillLevelNotified?: Record<string, number>
+    } = { elapsedSeconds: Math.max(0, elapsed) }
     if (status === 'running' && currentActivity) {
       const skillId = categoryToSkillId(currentActivity.category)
-      updates.sessionSkillXP = { ...sessionSkillXP, [skillId]: (sessionSkillXP[skillId] ?? 0) + 1 }
+      const newSessionXP = { ...sessionSkillXP, [skillId]: (sessionSkillXP[skillId] ?? 0) + 1 }
+      updates.sessionSkillXP = newSessionXP
+      const baseXP = skillXPAtStart[skillId] ?? 0
+      const currentXP = baseXP + (newSessionXP[skillId] ?? 0)
+      const currentLevel = skillLevelFromXP(currentXP)
+      const prevLevel = skillLevelFromXP(baseXP)
+      const notifiedLevel = skillLevelNotified[skillId] ?? prevLevel
+      if (currentLevel > notifiedLevel) {
+        updates.pendingSkillLevelUpSkill = { skillId, level: currentLevel }
+        updates.skillLevelNotified = { ...skillLevelNotified, [skillId]: currentLevel }
+      }
     }
     set(updates)
   },
@@ -305,7 +330,32 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       levelBefore = levelFromTotalXP(totalXP)
     }
 
-    set({ status: 'running', elapsedSeconds: 0, sessionId, sessionStartTime, isAfkPaused: false, liveXP: 0, xpPopups: [], levelBefore, pendingLevelUp: null, sessionRewards: [], sessionSkillXP: {} })
+    let skillXPAtStart: Record<string, number> = {}
+    if (api?.db?.getAllSkillXP) {
+      const rows = (await api.db.getAllSkillXP()) as { skill_id: string; total_xp: number }[]
+      skillXPAtStart = Object.fromEntries((rows || []).map((r) => [r.skill_id, r.total_xp]))
+    } else if (typeof localStorage !== 'undefined') {
+      try {
+        const stored = JSON.parse(localStorage.getItem('grinder_skill_xp') || '{}') as Record<string, number>
+        skillXPAtStart = { ...stored }
+      } catch { /* ignore */ }
+    }
+    set({
+      status: 'running',
+      elapsedSeconds: 0,
+      sessionId,
+      sessionStartTime,
+      isAfkPaused: false,
+      liveXP: 0,
+      xpPopups: [],
+      levelBefore,
+      pendingLevelUp: null,
+      sessionRewards: [],
+      sessionSkillXP: {},
+      skillXPAtStart,
+      skillLevelNotified: {},
+      pendingSkillLevelUpSkill: null,
+    })
     if (api) {
       api.tracker.start()
       // Apply AFK threshold from settings
@@ -336,7 +386,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     stopXpTicking()
     playSessionStopSound()
     const { sessionId, sessionStartTime, elapsedSeconds } = get()
-    set({ status: 'idle' })
+    set({ status: 'idle', pendingSkillLevelUpSkill: null })
     const api = typeof window !== 'undefined' ? window.electronAPI : null
     const endTime = Date.now()
 
@@ -451,6 +501,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   dismissLevelUp() {
     set({ pendingLevelUp: null })
+  },
+
+  dismissSkillLevelUp() {
+    set({ pendingSkillLevelUpSkill: null })
   },
 
   setGrindPageActive(v: boolean) {

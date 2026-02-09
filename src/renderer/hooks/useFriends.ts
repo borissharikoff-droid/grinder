@@ -199,10 +199,10 @@ export function useFriends() {
     }
   }, [user, fetchFriends])
 
-  // Poll presence/activity every 25s so updates show without switching tabs
+  // Poll presence/activity every 15s so the Friends tab updates live without switching
   useEffect(() => {
     if (!user) return
-    const interval = setInterval(fetchFriends, 25_000)
+    const interval = setInterval(fetchFriends, 15_000)
     return () => clearInterval(interval)
   }, [user, fetchFriends])
 
