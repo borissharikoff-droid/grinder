@@ -124,10 +124,12 @@ while ($true) {
 `.replace(/\r?\n/g, '\n').trim()
 
 let hasReceivedWinLine = false
+let hasReceivedReady = false
 
 function parseLine(line: string): void {
   const trimmed = line.trim()
   if (trimmed === 'READY') {
+    hasReceivedReady = true
     log.info('[tracker] Detector script ready (Add-Type succeeded)')
     return
   }
@@ -155,11 +157,52 @@ function parseLine(line: string): void {
 let detectorScriptPath: string | null = null
 let detectorStderrLines: string[] = []
 
+const PROBE_TIMEOUT_MS = 3000
+const STDERR_TAIL_LINES = 10
+
+/** Returns true if PowerShell runs and prints the probe string to stdout. */
+function probePowerShell(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const psExe = getPowerShellPath()
+    const args = ['-NoProfile', '-NoLogo', '-NonInteractive', '-Command', "Write-Output 'IDLY_PROBE_OK'"]
+    let stdout = ''
+    let resolved = false
+    const done = (ok: boolean) => {
+      if (resolved) return
+      resolved = true
+      try { child.kill() } catch { /* ignore */ }
+      resolve(ok)
+    }
+    let child: ChildProcess
+    try {
+      child = spawn(psExe, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+        env: { ...process.env },
+      })
+    } catch (e) {
+      log.warn('[tracker] PowerShell probe spawn failed', e)
+      resolve(false)
+      return
+    }
+    child.stdout?.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString('utf8')
+      if (stdout.includes('IDLY_PROBE_OK')) done(true)
+    })
+    child.on('error', () => done(false))
+    child.on('exit', () => {
+      if (!resolved) done(stdout.includes('IDLY_PROBE_OK'))
+    })
+    setTimeout(() => done(stdout.includes('IDLY_PROBE_OK')), PROBE_TIMEOUT_MS)
+  })
+}
+
 function startWindowDetector(): void {
   if (process.platform !== 'win32') return
   if (detectorProcess) return
   log.info('[tracker] Starting persistent window detector')
   hasReceivedWinLine = false
+  hasReceivedReady = false
   detectorStderrLines = []
 
   const scriptDir = app.getPath('userData')
@@ -169,10 +212,6 @@ function startWindowDetector(): void {
     cwd: scriptDir,
     env: { ...process.env },
   }
-
-  // 1) Try -EncodedCommand (no file write; bypasses execution policy / path issues)
-  const encodedScript = Buffer.from(DETECTOR_SCRIPT, 'utf16le').toString('base64')
-  const encodedArgs = ['-NoProfile', '-NoLogo', '-Sta', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Scope', 'Process', '-EncodedCommand', encodedScript]
 
   function trySpawn(executable: string, args: string[]): ChildProcess | null {
     try {
@@ -184,13 +223,19 @@ function startWindowDetector(): void {
   }
 
   const psExe = getPowerShellPath()
-  detectorProcess = trySpawn(psExe, encodedArgs)
-  if (!detectorProcess) {
-    detectorProcess = trySpawn('powershell', encodedArgs)
+  const useFileOnly = detectorRestartCount > 0
+
+  // -ExecutionPolicy Bypass only (no -Scope Process: some PowerShell/configs treat -Scope as separate cmdlet and fail)
+  if (!useFileOnly) {
+    // 1) Try -EncodedCommand first (no file write)
+    const encodedScript = Buffer.from(DETECTOR_SCRIPT, 'utf16le').toString('base64')
+    const encodedArgs = ['-NoProfile', '-NoLogo', '-Sta', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encodedScript]
+    detectorProcess = trySpawn(psExe, encodedArgs)
+    if (!detectorProcess) detectorProcess = trySpawn('powershell', encodedArgs)
   }
 
-  // 2) Fallback: -File (write script to userData)
-  if (!detectorProcess) {
+  // 2) Fallback or restart: -File only (avoids command-line length / encoding issues)
+  if (!detectorProcess || useFileOnly) {
     try {
       detectorScriptPath = path.join(scriptDir, 'idly-window-detector.ps1')
       fs.writeFileSync(detectorScriptPath, '\uFEFF' + DETECTOR_SCRIPT, { encoding: 'utf8' })
@@ -198,7 +243,7 @@ function startWindowDetector(): void {
       log.error('[tracker] Failed to write detector script', e)
       return
     }
-    const fileArgs = ['-NoProfile', '-NoLogo', '-Sta', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Scope', 'Process', '-File', detectorScriptPath]
+    const fileArgs = ['-NoProfile', '-NoLogo', '-Sta', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', detectorScriptPath]
     detectorProcess = trySpawn(psExe, fileArgs)
     if (!detectorProcess) {
       detectorProcess = trySpawn('powershell', fileArgs)
@@ -260,12 +305,14 @@ function startWindowDetector(): void {
   detectorRestartTimeout = setTimeout(() => {
     detectorRestartTimeout = null
     if (hasReceivedWinLine || detectorRestartCount > 0) {
-      if (!hasReceivedWinLine && detectorStderrLines.length > 0) {
-        log.warn('[tracker] No window data; stderr was:', detectorStderrLines.join('; '))
+      if (!hasReceivedWinLine) {
+        const stderrTail = detectorStderrLines.slice(-STDERR_TAIL_LINES)
+        log.warn('[tracker] No window data; ready=', hasReceivedReady, 'stderr (last ' + STDERR_TAIL_LINES + '):', stderrTail.join('; '))
       }
       return
     }
-    log.warn('[tracker] No window data after 25s, restarting detector once', { stderr: detectorStderrLines })
+    const stderrTail = detectorStderrLines.slice(-STDERR_TAIL_LINES)
+    log.warn('[tracker] No window data after 25s; ready=', hasReceivedReady, 'restarting detector once with -File only. stderr (last ' + STDERR_TAIL_LINES + '):', stderrTail.join('; '))
     detectorRestartCount++
     stopWindowDetector()
     startWindowDetector()
@@ -480,10 +527,17 @@ export function getTrackerApi() {
       isIdle = false
       latestWinInfo = null
       detectorRestartCount = 0
-      startWindowDetector()
       pollInterval = setInterval(poll, POLL_INTERVAL_MS)
       poll() // run immediately so we show "Detecting..." then update when first WIN line arrives
       setTimeout(poll, 800) // and again after detector had time to output (script loop is 1.5s)
+      if (process.platform !== 'win32') return
+      probePowerShell().then((ok) => {
+        if (ok) {
+          startWindowDetector()
+        } else {
+          log.error('[tracker] PowerShell probe failed (no output or timeout). Window detector not started. Check that Windows PowerShell is installed and not blocked.')
+        }
+      })
     },
     stop(): ActivitySegment[] {
       if (pollInterval) {

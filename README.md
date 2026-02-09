@@ -20,11 +20,11 @@ Windows productivity tracker with a session timer, activity monitoring, AI-power
 
 2. **Environment**
 
-   Copy `.env.example` to `.env` and set:
+   Copy `.env.example` to `.env` in the project root and set:
 
    - `DEEPSEEK_API_KEY` — for AI session analysis in Stats (optional; leave empty to skip).
    - `SUPABASE_URL` and `SUPABASE_ANON_KEY` — for sign-in and Friends (optional).
-   - `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` — same Supabase values for the renderer (required only if using Friends).
+   - `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` — same Supabase values for the renderer. **Required for the Friends tab.** These are inlined at build time, so they must be present in `.env` when you run `npm run build`; otherwise the packaged app will show "Supabase не настроен" on Friends.
 
 3. **Supabase (optional)**
 
@@ -45,6 +45,8 @@ Windows productivity tracker with a session timer, activity monitoring, AI-power
    **Browser only:** To work only in the browser (no Electron), run `npm run dev` and open `http://localhost:5173`. Same live reload on save.
 
 5. **Build for production**
+
+   Ensure `.env` exists in the project root with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` if you want the Friends feature in the built app (Vite bakes these into the renderer at build time).
 
    ```bash
    npm run build

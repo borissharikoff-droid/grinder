@@ -231,9 +231,15 @@ export function SettingsPage() {
         />
       </div>
 
-      {/* Data Export */}
+      {/* Data & Friends */}
       <div className="rounded-xl bg-discord-card/80 border border-white/10 p-4 space-y-3">
-        <p className="text-xs uppercase tracking-wider text-gray-400 font-mono">[ data export ]</p>
+        <p className="text-xs uppercase tracking-wider text-gray-400 font-mono">[ data & friends ]</p>
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-gray-400">Supabase (друзья)</span>
+          <span className={supabase ? 'text-cyber-neon font-mono' : 'text-gray-500 font-mono'}>
+            {supabase ? 'настроен' : 'не настроен'}
+          </span>
+        </div>
         <p className="text-xs text-gray-500">Download your grind history. Flex with data.</p>
         <div className="flex gap-2">
           <motion.button

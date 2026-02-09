@@ -69,7 +69,7 @@ const CH = {
     setAutoLaunch: 'settings:setAutoLaunch',
   },
   notify: { show: 'notify:show' },
-  data: { exportSessions: 'data:exportSessions' },
+  data: { exportSessions: 'data:exportSessions', getLogsPath: 'data:getLogsPath' },
   updater: { status: 'updater:status', install: 'updater:install' },
 }
 
@@ -152,7 +152,11 @@ try {
       setAutoLaunch: (enabled: boolean) => ipcRenderer.invoke(CH.settings.setAutoLaunch, enabled),
     },
     notify: { show: (title: string, body: string) => ipcRenderer.invoke(CH.notify.show, title, body) },
-    data: { exportSessions: (format: 'csv' | 'json') => ipcRenderer.invoke(CH.data.exportSessions, format) },
+    data: {
+      exportSessions: (format: 'csv' | 'json') => ipcRenderer.invoke(CH.data.exportSessions, format),
+      getLogsPath: () => ipcRenderer.invoke(CH.data.getLogsPath),
+      openLogsFolder: () => ipcRenderer.invoke(CH.data.openLogsFolder),
+    },
     updater: {
       onStatus: (cb: (info: { status: string; version?: string }) => void) => {
         const handler = (_: unknown, info: { status: string; version?: string }) => cb(info)

@@ -46,8 +46,13 @@ export function initAutoUpdater(win: BrowserWindow): void {
     win.webContents.send(IPC_CHANNELS.updater.status, { status: 'ready', version: info.version })
   })
 
-  autoUpdater.on('error', (err) => {
-    log.error('[updater] Error:', err.message)
+  autoUpdater.on('error', (err: Error & { code?: string }) => {
+    const is404 = err.message?.includes('404') || err.code === 'ERR_HTTP_RESPONSE_CODE_FAILURE'
+    if (is404) {
+      log.warn('[updater] No update server or release (404). Check publish.repo in electron-builder config.')
+    } else {
+      log.error('[updater] Error:', err.message)
+    }
   })
 
   // Check immediately on launch, then every 30 minutes

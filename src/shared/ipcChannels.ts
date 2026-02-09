@@ -67,6 +67,8 @@ export const IPC_CHANNELS = {
   },
   data: {
     exportSessions: 'data:exportSessions',
+    getLogsPath: 'data:getLogsPath',
+    openLogsFolder: 'data:openLogsFolder',
   },
   updater: {
     status: 'updater:status',

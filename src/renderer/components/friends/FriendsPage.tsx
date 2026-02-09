@@ -27,11 +27,19 @@ export function FriendsPage() {
 
   return (
     <div className="p-4 pb-2">
-      {!supabase || !user ? (
+      {!user ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <span className="text-3xl mb-3">👥</span>
           <p className="text-white font-medium mb-1">Sign in to join the squad</p>
           <p className="text-gray-500 text-xs">Add friends, flex your stats, compete on the leaderboard.</p>
+        </div>
+      ) : !supabase ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <span className="text-3xl mb-3">🔌</span>
+          <p className="text-white font-medium mb-1">Supabase не настроен</p>
+          <p className="text-gray-500 text-xs max-w-[280px]">
+            Добавьте VITE_SUPABASE_URL и VITE_SUPABASE_ANON_KEY в .env в корне проекта и пересоберите приложение (npm run build).
+          </p>
         </div>
       ) : view === 'compare' && selected ? (
         <FriendCompare friend={selected} onBack={() => setView('profile')} />

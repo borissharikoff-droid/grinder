@@ -25,7 +25,8 @@ nsis:
   allowToChangeInstallationDirectory: false
   artifactName: "Idly-Setup-${version}.exe"
 forceCodeSigning: false
+# For auto-updates: create a GitHub Release with latest.yml + installer. If 404 in logs, set repo to your actual repo name.
 publish:
   provider: github
   owner: borissharikoff-droid
-  repo: grinder
+  repo: idly

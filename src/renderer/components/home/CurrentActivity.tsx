@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { useSessionStore } from '../../stores/sessionStore'
 import { categoryToSkillId, getSkillById } from '../../lib/skills'
 
@@ -5,7 +6,13 @@ export function CurrentActivity() {
   const currentActivity = useSessionStore((s) => s.currentActivity)
   const sessionSkillXP = useSessionStore((s) => s.sessionSkillXP)
   const status = useSessionStore((s) => s.status)
-  const api = typeof window !== 'undefined' ? (window as unknown as { electronAPI?: { _preloadError?: boolean; _message?: string } }).electronAPI : undefined
+  const [logsPath, setLogsPath] = useState<string | null>(null)
+  const api = typeof window !== 'undefined' ? (window as unknown as { electronAPI?: { _preloadError?: boolean; _message?: string; data?: { getLogsPath?: () => Promise<string>; openLogsFolder?: () => Promise<unknown> } } }).electronAPI : undefined
+
+  useEffect(() => {
+    if (!api?.data?.getLogsPath) return
+    api.data.getLogsPath().then(setLogsPath).catch(() => {})
+  }, [api])
   const isPreloadError = api && '_preloadError' in api && api._preloadError
   const isBrowser = typeof window === 'undefined' || !api || (!('tracker' in api) && !isPreloadError)
 
@@ -35,12 +42,16 @@ export function CurrentActivity() {
   const isDetectorError = currentActivity?.appName === 'Ошибка детектора окна'
   const isUnknown = !currentActivity || currentActivity.appName === 'Unknown' || currentActivity.windowTitle === 'Detecting...'
 
+  const openLogs = () => api?.data?.openLogsFolder?.()
+
   if (isDetectorError && currentActivity) {
     return (
       <div className="w-full max-w-xs rounded-xl bg-amber-950/30 border border-amber-500/30 px-4 py-3">
         <p className="text-amber-400 text-sm font-medium">Ошибка детектора окна</p>
         <p className="text-gray-400 text-xs mt-1 break-words">{currentActivity.windowTitle}</p>
         <p className="text-gray-500 text-[11px] mt-2">Проверьте логи в папке приложения или запустите приложение от имени администратора.</p>
+        {logsPath && <p className="text-gray-500 text-[11px] mt-1.5 font-mono truncate" title={logsPath}>{logsPath}</p>}
+        {api?.data?.openLogsFolder && <button type="button" onClick={openLogs} className="mt-2 text-xs text-cyber-neon hover:underline">Открыть папку логов</button>}
       </div>
     )
   }
@@ -49,6 +60,9 @@ export function CurrentActivity() {
     return (
       <div className="w-full max-w-xs rounded-xl bg-discord-card/60 border border-white/5 px-4 py-3 text-center">
         <p className="text-gray-500 text-xs font-mono">detecting window...</p>
+        <p className="text-gray-600 text-[11px] mt-1.5">Если не исчезает — проверьте логи в папке приложения.</p>
+        {logsPath && <p className="text-gray-500 text-[11px] mt-1 font-mono truncate" title={logsPath}>{logsPath}</p>}
+        {api?.data?.openLogsFolder && <button type="button" onClick={openLogs} className="mt-2 text-xs text-cyber-neon hover:underline">Открыть папку логов</button>}
       </div>
     )
   }

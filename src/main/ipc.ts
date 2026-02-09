@@ -1,4 +1,4 @@
-import { ipcMain, app, dialog } from 'electron'
+import { ipcMain, app, dialog, shell } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { getTrackerApi } from './tracker'
@@ -289,6 +289,17 @@ export function registerIpcHandlers() {
     }
 
     return filePath
+  })
+
+  const logsDir = () => path.join(app.getPath('userData'), 'logs')
+  ipcMain.handle(IPC_CHANNELS.data.getLogsPath, () => logsDir())
+  ipcMain.handle(IPC_CHANNELS.data.openLogsFolder, async () => {
+    const dir = logsDir()
+    try {
+      await shell.openPath(dir)
+    } catch {
+      await shell.showItemInFolder(path.join(dir, 'main.log'))
+    }
   })
 
   // ── Auto-updater: restart to apply update ────────────────────────────────
