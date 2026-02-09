@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
 import { FRAMES, BADGES } from '../../lib/cosmetics'
+import { getPersonaById } from '../../lib/persona'
 
 interface LeaderboardRow {
   id: string
@@ -13,6 +14,7 @@ interface LeaderboardRow {
   streak_count: number
   equipped_badges?: string[]
   equipped_frame?: string | null
+  persona_id?: string | null
 }
 
 const MEDALS = ['🥇', '🥈', '🥉']
@@ -79,6 +81,7 @@ export function Leaderboard() {
           streak_count: p.streak_count || 0,
           equipped_badges: p.equipped_badges || [],
           equipped_frame: p.equipped_frame || null,
+          persona_id: p.persona_id ?? null,
         }))
         list.sort((a, b) => b.total_skill_level - a.total_skill_level)
         setRows(list)
@@ -112,6 +115,7 @@ export function Leaderboard() {
           const badges = (r.equipped_badges || [])
             .map(bId => BADGES.find(b => b.id === bId))
             .filter(Boolean)
+          const persona = getPersonaById(r.persona_id ?? null)
 
           return (
             <motion.div
@@ -154,6 +158,9 @@ export function Leaderboard() {
                     {isMe && <span className="text-gray-500 ml-1">(you)</span>}
                   </span>
                   <span className="text-[9px] text-gray-500 font-mono shrink-0" title="Total skill level">{r.total_skill_level}</span>
+                  {persona && (
+                    <span className="text-[9px] shrink-0" title={persona.label}>{persona.emoji}</span>
+                  )}
                   {badges.slice(0, 2).map(badge => badge && (
                     <span
                       key={badge.id}

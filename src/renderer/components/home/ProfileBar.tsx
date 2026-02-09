@@ -50,11 +50,11 @@ export function ProfileBar({ onNavigateProfile }: ProfileBarProps) {
     }
     if (api?.db?.getCategoryStats) {
       api.db.getCategoryStats().then((cats) => {
-        if (cats && cats.length > 0) {
-          const p = detectPersona(cats as { category: string; total_ms: number }[])
-          setPersona(p)
-        }
+        const p = detectPersona((cats || []) as { category: string; total_ms: number }[])
+        setPersona(p)
       })
+    } else {
+      setPersona(detectPersona([]))
     }
   }, [user])
 

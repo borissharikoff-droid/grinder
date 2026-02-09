@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import type { FriendProfile as FriendProfileType } from '../../hooks/useFriends'
 import { FRAMES, BADGES } from '../../lib/cosmetics'
 import { getSkillById, getSkillByName } from '../../lib/skills'
+import { getPersonaById } from '../../lib/persona'
 import { ACHIEVEMENTS } from '../../lib/xp'
 
 interface FriendProfileProps {
@@ -61,6 +62,7 @@ export function FriendProfile({ profile, onBack, onCompare, onMessage }: FriendP
   const isLeveling = profile.is_online && activityLabel.startsWith('Leveling ')
   const levelingSkill = isLeveling ? activityLabel.replace('Leveling ', '') : null
   const totalSkillLevel = profile.total_skill_level ?? 0
+  const persona = getPersonaById(profile.persona_id ?? null)
 
   // Unlocked achievements details
   const unlockedAchievements = ACHIEVEMENTS.filter(a => achievements.includes(a.id))
@@ -130,6 +132,11 @@ export function FriendProfile({ profile, onBack, onCompare, onMessage }: FriendP
             <div className="flex items-center gap-2 mb-1">
               <span className="text-white font-bold text-base truncate">{profile.username || 'Anonymous'}</span>
               <span className="text-cyber-neon font-mono text-xs" title="Total skill level">{totalSkillLevel}</span>
+              {persona && (
+                <span className="text-xs px-1.5 py-0.5 rounded border border-white/10 bg-discord-darker/80 text-gray-400" title={persona.description}>
+                  {persona.emoji} {persona.label}
+                </span>
+              )}
             </div>
 
             {/* Badges row */}

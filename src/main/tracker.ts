@@ -1,8 +1,14 @@
 import { spawn, type ChildProcess } from 'child_process'
 import fs from 'fs'
 import path from 'path'
-import os from 'os'
+import { app } from 'electron'
 import log from './logger'
+
+/** Full path to PowerShell on Windows (works when PATH is not set for child processes). */
+function getPowerShellPath(): string {
+  const root = process.env.SystemRoot || process.env.WINDIR || 'C:\\Windows'
+  return path.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+}
 
 // ── Persistent PowerShell window detector ──
 
@@ -128,27 +134,50 @@ function parseLine(line: string): void {
 }
 
 let detectorScriptPath: string | null = null
+let detectorStderrLines: string[] = []
 
 function startWindowDetector(): void {
   if (process.platform !== 'win32') return
   if (detectorProcess) return
   log.info('[tracker] Starting persistent window detector')
   hasReceivedWinLine = false
+  detectorStderrLines = []
 
+  let scriptDir: string
   try {
-    const tmpDir = os.tmpdir()
-    detectorScriptPath = path.join(tmpDir, `idly-window-detector-${process.pid}.ps1`)
+    scriptDir = app.getPath('userData')
+    detectorScriptPath = path.join(scriptDir, 'idly-window-detector.ps1')
     fs.writeFileSync(detectorScriptPath, '\uFEFF' + DETECTOR_SCRIPT, { encoding: 'utf8' })
   } catch (e) {
     log.error('[tracker] Failed to write detector script', e)
     return
   }
 
-  detectorProcess = spawn(
-    'powershell',
-    ['-NoProfile', '-NoLogo', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', detectorScriptPath],
-    { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, cwd: process.cwd(), env: process.env }
-  )
+  const psExe = getPowerShellPath()
+  const args = ['-NoProfile', '-NoLogo', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', detectorScriptPath]
+  const spawnOpts = { stdio: ['ignore', 'pipe', 'pipe'] as const, windowsHide: true, cwd: scriptDir, env: process.env }
+
+  function trySpawn(executable: string): ChildProcess | null {
+    try {
+      return spawn(executable, args, spawnOpts)
+    } catch (e) {
+      log.warn('[tracker] spawn failed', { executable, err: e })
+      return null
+    }
+  }
+
+  detectorProcess = trySpawn(psExe)
+  if (!detectorProcess) {
+    detectorProcess = trySpawn('powershell')
+  }
+  if (!detectorProcess) {
+    log.error('[tracker] Could not start PowerShell. Check that Windows PowerShell is installed.')
+    if (detectorScriptPath) {
+      try { fs.unlinkSync(detectorScriptPath) } catch { /* ignore */ }
+      detectorScriptPath = null
+    }
+    return
+  }
 
   detectorProcess.stdout?.on('data', (chunk: Buffer) => {
     stdoutBuffer += chunk.toString('utf8')
@@ -161,7 +190,10 @@ function startWindowDetector(): void {
 
   detectorProcess.stderr?.on('data', (chunk: Buffer) => {
     const msg = chunk.toString().trim()
-    if (msg) log.warn('[tracker:stderr]', msg)
+    if (msg) {
+      detectorStderrLines.push(msg)
+      log.warn('[tracker:stderr]', msg)
+    }
   })
 
   detectorProcess.on('exit', (code, signal) => {
@@ -189,8 +221,13 @@ function startWindowDetector(): void {
   }
   detectorRestartTimeout = setTimeout(() => {
     detectorRestartTimeout = null
-    if (hasReceivedWinLine || detectorRestartCount > 0) return
-    log.warn('[tracker] No window data after 10s, restarting detector once')
+    if (hasReceivedWinLine || detectorRestartCount > 0) {
+      if (!hasReceivedWinLine && detectorStderrLines.length > 0) {
+        log.warn('[tracker] No window data; stderr was:', detectorStderrLines.join('; '))
+      }
+      return
+    }
+    log.warn('[tracker] No window data after 10s, restarting detector once', { stderr: detectorStderrLines })
     detectorRestartCount++
     stopWindowDetector()
     startWindowDetector()

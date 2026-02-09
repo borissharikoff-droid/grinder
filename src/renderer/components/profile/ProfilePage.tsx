@@ -80,10 +80,10 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
     // Persona
     if (api?.db?.getCategoryStats) {
       api.db.getCategoryStats().then((cats) => {
-        if (cats && cats.length > 0) {
-          setPersona(detectPersona(cats as { category: string; total_ms: number }[]))
-        }
+        setPersona(detectPersona((cats || []) as { category: string; total_ms: number }[]))
       })
+    } else {
+      setPersona(detectPersona([]))
     }
 
     // Cosmetics

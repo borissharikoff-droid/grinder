@@ -31,6 +31,8 @@ export interface FriendProfile {
   top_skills?: FriendSkill[]
   /** Sum of all skill levels (for display e.g. 25/792) */
   total_skill_level?: number
+  /** Focus persona: developer, gamer, scholar, etc. (synced from app) */
+  persona_id?: string | null
 }
 
 export interface PendingRequest {
@@ -107,6 +109,7 @@ export function useFriends() {
             friendship_id: f.id,
             friendship_status: f.status,
             top_skills: [] as FriendSkill[],
+            persona_id: (p.persona_id as string | null) ?? null,
           }
         })
         try {

@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../stores/authStore'
 import { skillLevelFromXP } from '../lib/skills'
 import { getEquippedBadges, getEquippedFrame } from '../lib/cosmetics'
+import { detectPersona } from '../lib/persona'
 
 export function useProfileSync() {
   const { user } = useAuthStore()
@@ -26,10 +27,18 @@ export function useProfileSync() {
       const equippedBadges = getEquippedBadges()
       const equippedFrame = getEquippedFrame()
 
-      // Sync total skill level as "level" so friends/leaderboard sort by it
+      // Persona from category stats (so friends see your status: Developer, Gamer, Scholar, etc.)
+      let personaId: string | null = null
+      if (api?.db?.getCategoryStats) {
+        const cats = (await api.db.getCategoryStats()) as { category: string; total_ms: number }[] | undefined
+        personaId = detectPersona(cats || []).id
+      }
+
+      // Sync total skill level, streak, persona
       await supabase.from('profiles').update({
         level: totalSkillLevel,
         streak_count: streak,
+        ...(personaId != null && { persona_id: personaId }),
         updated_at: new Date().toISOString(),
       }).eq('id', user.id)
 

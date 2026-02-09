@@ -2,6 +2,7 @@ import { motion } from 'framer-motion'
 import type { FriendProfile } from '../../hooks/useFriends'
 import { getSkillById, getSkillByName, MAX_TOTAL_SKILL_LEVEL } from '../../lib/skills'
 import { FRAMES, BADGES } from '../../lib/cosmetics'
+import { getPersonaById } from '../../lib/persona'
 
 interface FriendListProps {
   friends: FriendProfile[]
@@ -44,6 +45,7 @@ export function FriendList({ friends, onSelectFriend }: FriendListProps) {
         const { activityLabel, appName } = parseActivity(f.current_activity ?? null)
         const isLeveling = f.is_online && activityLabel.startsWith('Leveling ')
         const levelingSkill = isLeveling ? activityLabel.replace('Leveling ', '') : null
+        const persona = getPersonaById(f.persona_id ?? null)
 
         return (
           <motion.button
@@ -86,6 +88,11 @@ export function FriendList({ friends, onSelectFriend }: FriendListProps) {
               <div className="flex items-center gap-1.5 mb-0.5">
                 <span className="text-sm font-semibold text-white truncate">{f.username || 'Anonymous'}</span>
                 <span className="text-[10px] text-cyber-neon font-mono shrink-0" title="Total skill level">{(f.total_skill_level ?? 0)}/{MAX_TOTAL_SKILL_LEVEL}</span>
+                {persona && (
+                  <span className="text-[9px] px-1 py-0.5 rounded border border-white/10 bg-discord-darker/80 text-gray-400 shrink-0" title={persona.label}>
+                    {persona.emoji}
+                  </span>
+                )}
                 {/* Equipped badges */}
                 {badges.map(badge => badge && (
                   <span

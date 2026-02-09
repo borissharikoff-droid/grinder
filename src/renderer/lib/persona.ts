@@ -12,6 +12,7 @@ const PERSONAS: PersonaResult[] = [
   { id: 'social', label: 'Social Connector', emoji: '💬', description: 'Always connected' },
   { id: 'explorer', label: 'Explorer', emoji: '🌐', description: 'Curious by nature' },
   { id: 'music_lover', label: 'Music Lover', emoji: '🎵', description: 'Vibes on point' },
+  { id: 'scholar', label: 'Scholar', emoji: '📚', description: 'Learning & knowledge' },
   { id: 'idly', label: 'Idly', emoji: '⚡', description: 'Pure focus energy' },
 ]
 
@@ -22,10 +23,10 @@ const PERSONAS: PersonaResult[] = [
 export function detectPersona(
   categories: { category: string; total_ms: number }[]
 ): PersonaResult {
-  if (categories.length === 0) return PERSONAS[6] // default: idly
+  if (categories.length === 0) return PERSONAS[7] // default: idly
 
   const total = categories.reduce((sum, c) => sum + c.total_ms, 0)
-  if (total === 0) return PERSONAS[6]
+  if (total === 0) return PERSONAS[7]
 
   const byCategory: Record<string, number> = {}
   for (const c of categories) {
@@ -35,14 +36,22 @@ export function detectPersona(
   const pct = (cat: string) => ((byCategory[cat] || 0) / total) * 100
 
   // Determine dominant persona
-  if (pct('coding') >= 40) return PERSONAS[0] // developer
-  if (pct('games') >= 30) return PERSONAS[2]  // gamer
-  if (pct('social') >= 30) return PERSONAS[3]  // social
-  if (pct('music') >= 25) return PERSONAS[5]  // music lover
+  if (pct('coding') >= 40) return PERSONAS[0]   // developer
+  if (pct('creative') >= 25) return PERSONAS[1] // creative
+  if (pct('games') >= 30) return PERSONAS[2]   // gamer
+  if (pct('social') >= 30) return PERSONAS[3]   // social
   if (pct('browsing') >= 40) return PERSONAS[4] // explorer
+  if (pct('music') >= 25) return PERSONAS[5]   // music lover
+  if (pct('learning') >= 25) return PERSONAS[6] // scholar
 
   // Mixed — return idly
-  return PERSONAS[6]
+  return PERSONAS[7]
+}
+
+/** Get persona by id (for displaying friend status from stored persona_id). */
+export function getPersonaById(id: string | null): PersonaResult | null {
+  if (!id) return null
+  return PERSONAS.find((p) => p.id === id) ?? null
 }
 
 export interface Insight {
