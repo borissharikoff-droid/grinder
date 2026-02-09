@@ -21,7 +21,9 @@ export function CurrentActivity() {
     )
   }
 
-  if (!currentActivity) {
+  const isUnknown = !currentActivity || currentActivity.appName === 'Unknown' || currentActivity.windowTitle === 'Detecting...'
+
+  if (!currentActivity || isUnknown) {
     return (
       <div className="w-full max-w-xs rounded-xl bg-discord-card/60 border border-white/5 px-4 py-3 text-center">
         <p className="text-gray-500 text-xs font-mono">detecting window...</p>

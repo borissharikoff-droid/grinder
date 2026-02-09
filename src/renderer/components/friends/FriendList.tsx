@@ -3,13 +3,18 @@ import type { FriendProfile } from '../../hooks/useFriends'
 import { getSkillById, getSkillByName, MAX_TOTAL_SKILL_LEVEL } from '../../lib/skills'
 import { FRAMES, BADGES } from '../../lib/cosmetics'
 import { getPersonaById } from '../../lib/persona'
+import { playClickSound } from '../../lib/sounds'
 
 interface FriendListProps {
   friends: FriendProfile[]
   onSelectFriend: (profile: FriendProfile) => void
+  /** Open chat with this friend (message icon) */
+  onMessageFriend?: (profile: FriendProfile) => void
+  /** Unread message count per friend id (from that friend to me) */
+  unreadByFriendId?: Record<string, number>
 }
 
-export function FriendList({ friends, onSelectFriend }: FriendListProps) {
+export function FriendList({ friends, onSelectFriend, onMessageFriend, unreadByFriendId = {} }: FriendListProps) {
   if (friends.length === 0) {
     return (
       <div className="rounded-xl bg-discord-card/80 border border-white/10 p-6 text-center text-gray-500">
@@ -46,21 +51,25 @@ export function FriendList({ friends, onSelectFriend }: FriendListProps) {
         const isLeveling = f.is_online && activityLabel.startsWith('Leveling ')
         const levelingSkill = isLeveling ? activityLabel.replace('Leveling ', '') : null
         const persona = getPersonaById(f.persona_id ?? null)
+        const unread = unreadByFriendId[f.id] ?? 0
 
         return (
-          <motion.button
+          <motion.div
             key={f.id}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.15 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => onSelectFriend(f)}
             className={`w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all ${
               f.is_online
                 ? 'bg-discord-card/90 border-white/10 hover:border-white/20'
                 : 'bg-discord-card/50 border-white/5 opacity-70 hover:opacity-90'
             }`}
           >
+            <button
+              type="button"
+              className="flex items-center gap-3 flex-1 min-w-0 text-left"
+              onClick={() => { playClickSound(); onSelectFriend(f) }}
+            >
             {/* Avatar with frame + online indicator */}
             <div className="relative shrink-0">
               {frame && (
@@ -153,16 +162,34 @@ export function FriendList({ friends, onSelectFriend }: FriendListProps) {
                 </div>
               )}
             </div>
+            </button>
 
-            {/* Streak on right */}
-            <div className="shrink-0 text-right flex flex-col items-end gap-0.5">
+            {/* Message + Streak on right */}
+            <div className="shrink-0 flex items-center gap-2">
+              {onMessageFriend && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onMessageFriend(f) }}
+                  className="relative p-1.5 rounded-lg text-gray-400 hover:text-cyber-neon hover:bg-white/5 transition-colors"
+                  title="Написать"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  </svg>
+                  {unread > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-1 flex items-center justify-center rounded-full bg-discord-red text-[10px] font-bold text-white">
+                      {unread > 99 ? '99+' : unread}
+                    </span>
+                  )}
+                </button>
+              )}
               {f.streak_count > 0 && (
                 <div className="text-[10px] text-orange-400 font-mono">
                   🔥 {f.streak_count}d
                 </div>
               )}
             </div>
-          </motion.button>
+          </motion.div>
         )
       })}
     </div>

@@ -5,6 +5,7 @@ import { getStreakMultiplier } from '../../lib/xp'
 import { skillLevelFromXP, MAX_TOTAL_SKILL_LEVEL } from '../../lib/skills'
 import { detectPersona } from '../../lib/persona'
 import { FRAMES, BADGES, getEquippedFrame, getEquippedBadges } from '../../lib/cosmetics'
+import { playClickSound } from '../../lib/sounds'
 
 interface ProfileBarProps {
   onNavigateProfile?: () => void
@@ -65,7 +66,7 @@ export function ProfileBar({ onNavigateProfile }: ProfileBarProps) {
       {/* Top row: avatar + info + sign out — overflow hidden so tooltips don't expand window */}
       <div className="flex items-center gap-2.5 w-full max-w-[260px] min-w-0">
         {/* Avatar */}
-        <button onClick={onNavigateProfile} className={`relative shrink-0 ${activeFrame ? `frame-style-${activeFrame.style}` : ''}`} title="Profile">
+        <button onClick={() => { playClickSound(); onNavigateProfile?.() }} className={`relative shrink-0 ${activeFrame ? `frame-style-${activeFrame.style}` : ''}`} title="Profile">
           {activeFrame && (
             <div className="frame-ring absolute -inset-1 rounded-full" style={{ background: activeFrame.gradient, opacity: 0.7, color: activeFrame.color, borderColor: activeFrame.color }} />
           )}

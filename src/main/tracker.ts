@@ -320,6 +320,9 @@ function categorizeMultiple(appName: string, windowTitle: string): ActivityCateg
     if (isLearning) return ['learning']
     return ['browsing']
   }
+  // Windows: Edge/Chrome sometimes as "Application Frame Host" or "Microsoft Edge"
+  if (/applicationframehost|microsoft edge|msedge|browser/i.test(lowerApp.replace(/\s+/g, ''))) return ['browsing']
+  if (/^(chrome|firefox|edge)$/i.test(lowerApp.replace(/\s+/g, ''))) return ['browsing']
   return ['other']
 }
 
@@ -363,8 +366,11 @@ function getAppDisplayName(appName: string): string {
     arc: 'Arc',
     yandex: 'Yandex Browser',
   }
-  const base = appName.replace(/\.(exe|app)$/i, '')
-  return map[base.toLowerCase()] || base
+  const base = appName.replace(/\.(exe|app)$/i, '').replace(/\s+/g, '')
+  if (map[base.toLowerCase()]) return map[base.toLowerCase()]
+  if (/applicationframehost|microsoftedge|msedge/i.test(base)) return 'Microsoft Edge'
+  if (/chrome/i.test(base)) return 'Google Chrome'
+  return appName.replace(/\.(exe|app)$/i, '')
 }
 
 function pushCurrentSegment(now: number): void {

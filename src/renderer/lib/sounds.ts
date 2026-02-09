@@ -1,7 +1,7 @@
 // Web Audio API sound effects — no external files needed
 
 let audioCtx: AudioContext | null = null
-let cachedVolume = 0.5
+let cachedVolume = 0.15
 let cachedMuted = false
 let settingsLoaded = false
 

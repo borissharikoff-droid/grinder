@@ -16,7 +16,7 @@ type FriendView = 'list' | 'profile' | 'compare' | 'chat'
 
 export function FriendsPage() {
   const { user } = useAuthStore()
-  const { friends, pendingRequests, loading, error, refresh, acceptRequest, rejectRequest } = useFriends()
+  const { friends, pendingRequests, unreadByFriendId, loading, error, refresh, acceptRequest, rejectRequest } = useFriends()
   const [selected, setSelected] = useState<FriendProfileType | null>(null)
   const [view, setView] = useState<FriendView>('list')
   const [showLeaderboard, setShowLeaderboard] = useState(false)
@@ -95,7 +95,12 @@ export function FriendsPage() {
             <p className="text-gray-500 text-sm py-4">Loading...</p>
           ) : (
             <>
-              <FriendList friends={friends} onSelectFriend={(f) => { setSelected(f); setView('profile') }} />
+              <FriendList
+                friends={friends}
+                onSelectFriend={(f) => { setSelected(f); setView('profile') }}
+                onMessageFriend={(f) => { setSelected(f); setView('chat') }}
+                unreadByFriendId={unreadByFriendId}
+              />
               {pendingRequests.filter((r) => r.direction === 'outgoing').length > 0 && (
                 <div className="mt-3">
                   <PendingRequests

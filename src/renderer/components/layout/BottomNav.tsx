@@ -21,6 +21,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
   const { incomingRequestsCount, unreadMessagesCount } = useNavBadgeStore()
   const badgeHome = (currentAlert && !currentAlert.claimed ? 1 : 0) + queue.length
   const badgeFriends = incomingRequestsCount + unreadMessagesCount
+  const hasUnclaimedLoot = currentAlert && !currentAlert.claimed
 
   return (
     <div className="shrink-0 flex justify-center pb-3 pt-1">
@@ -28,6 +29,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
         {tabs.map((tab) => {
           const active = activeTab === tab.id
           const badgeCount = tab.id === 'home' ? badgeHome : tab.id === 'friends' ? badgeFriends : 0
+          const isLootBadge = tab.id === 'home' && badgeCount > 0 && hasUnclaimedLoot
           return (
             <button
               key={tab.id}
@@ -44,8 +46,10 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
               {tab.icon}
               {badgeCount > 0 && (
                 <span
-                  className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-1 flex items-center justify-center rounded-full bg-discord-red text-[10px] font-bold text-white border-2 border-[#1a1a2e]"
-                  aria-label={`${badgeCount} new`}
+                  className={`absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-1 flex items-center justify-center rounded-full text-[10px] font-bold text-white border-2 border-[#1a1a2e] ${
+                    isLootBadge ? 'bg-orange-500' : 'bg-discord-red'
+                  }`}
+                  aria-label={isLootBadge ? 'Unclaimed loot' : `${badgeCount} new`}
                 >
                   {badgeCount > 99 ? '99+' : badgeCount}
                 </span>

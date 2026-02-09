@@ -50,6 +50,7 @@ export function useFriends() {
   const { user } = useAuthStore()
   const [friends, setFriends] = useState<FriendProfile[]>([])
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([])
+  const [unreadByFriendId, setUnreadByFriendId] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const pushAlert = useAlertStore((s) => s.push)
@@ -154,6 +155,24 @@ export function useFriends() {
       previousFriendsRef.current = friendList
       setFriends(friendList)
 
+      // Unread message count per friend (messages they sent to me, not read)
+      if (acceptedIds.length > 0) {
+        const { data: unreadRows } = await supabase
+          .from('messages')
+          .select('sender_id')
+          .eq('receiver_id', user.id)
+          .is('read_at', null)
+          .in('sender_id', acceptedIds)
+        const byFriend: Record<string, number> = {}
+        for (const row of unreadRows || []) {
+          const sid = (row as { sender_id: string }).sender_id
+          byFriend[sid] = (byFriend[sid] || 0) + 1
+        }
+        setUnreadByFriendId(byFriend)
+      } else {
+        setUnreadByFriendId({})
+      }
+
       // Check social achievements
       const alreadyUnlocked = JSON.parse(localStorage.getItem('idly_unlocked_achievements') || '[]') as string[]
       const newSocial = checkSocialAchievements(friendList.length, alreadyUnlocked)
@@ -232,6 +251,34 @@ export function useFriends() {
     }
   }, [user, fetchFriends])
 
+  // Refresh unread counts when messages change (new message or read)
+  const friendIds = friends.map((f) => f.id)
+  useEffect(() => {
+    if (!supabase || !user?.id || friendIds.length === 0) return
+    const refreshUnread = async () => {
+      const { data: rows } = await supabase
+        .from('messages')
+        .select('sender_id')
+        .eq('receiver_id', user.id)
+        .is('read_at', null)
+        .in('sender_id', friendIds)
+      const byFriend: Record<string, number> = {}
+      for (const row of rows || []) {
+        const sid = (row as { sender_id: string }).sender_id
+        byFriend[sid] = (byFriend[sid] || 0) + 1
+      }
+      setUnreadByFriendId(byFriend)
+    }
+    const channel = supabase
+      .channel('messages-unread')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `receiver_id=eq.${user.id}` }, refreshUnread)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: `receiver_id=eq.${user.id}` }, refreshUnread)
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [user?.id, supabase, friendIds.join(',')])
+
   // Poll presence/activity every 15s so the Friends tab updates live without switching
   useEffect(() => {
     if (!user) return
@@ -239,5 +286,5 @@ export function useFriends() {
     return () => clearInterval(interval)
   }, [user, fetchFriends])
 
-  return { friends, pendingRequests, loading, error, refresh: fetchFriends, acceptRequest, rejectRequest }
+  return { friends, pendingRequests, unreadByFriendId, loading, error, refresh: fetchFriends, acceptRequest, rejectRequest }
 }
