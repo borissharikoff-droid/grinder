@@ -35,11 +35,11 @@ interface HourlyStat {
   total_ms: number
 }
 
-/** Exclude the Grinder app from stats */
-function isGrinderApp(name: string): boolean {
+/** Exclude the Idly app from stats */
+function isIdlyApp(name: string): boolean {
   if (!name || typeof name !== 'string') return false
   const n = name.toLowerCase()
-  return n.includes('grinder') || n === 'grind tracker' || n === 'grind_tracker'
+  return n.includes('grinder') || n.includes('idly') || n === 'grind tracker' || n === 'grind_tracker'
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -155,14 +155,14 @@ export function StatsPage() {
       const filteredSessions = sinceMs > 0 ? allSessions.filter((s) => s.start_time >= sinceMs) : allSessions
 
       setSessions(filteredSessions)
-      const filteredApps = ((apps as AppStat[]) || []).filter((a) => !isGrinderApp(a.app_name))
+      const filteredApps = ((apps as AppStat[]) || []).filter((a) => !isIdlyApp(a.app_name))
       setAppUsage(filteredApps)
       setCategoryStats((cats as CatStat[]) || [])
       setContextSwitches(switches as number)
       setTotalSessions(sessionCount as number)
       setTotalSeconds(secs as number)
       setStreak(streakVal as number)
-      setWindowStats(((winStats as WindowStat[]) || []).filter((w) => !isGrinderApp(w.app_name)))
+      setWindowStats(((winStats as WindowStat[]) || []).filter((w) => !isIdlyApp(w.app_name)))
       setHourly((hourlyData as HourlyStat[]) || [])
       setTotalKeystrokes(keys as number)
 

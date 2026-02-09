@@ -85,6 +85,24 @@ export function playTabSound() {
   osc.stop(ctx.currentTime + 0.05)
 }
 
+export function playMessageSound() {
+  loadSettings()
+  if (cachedMuted) return
+  const ctx = getAudioCtx()
+  const osc = ctx.createOscillator()
+  const gain = ctx.createGain()
+  const vol = cachedVolume * 0.35
+  osc.type = 'sine'
+  osc.frequency.setValueAtTime(880, ctx.currentTime)
+  osc.frequency.exponentialRampToValueAtTime(1109, ctx.currentTime + 0.08)
+  gain.gain.setValueAtTime(vol * 0.2, ctx.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12)
+  osc.connect(gain)
+  gain.connect(ctx.destination)
+  osc.start(ctx.currentTime)
+  osc.stop(ctx.currentTime + 0.12)
+}
+
 export function playSessionStartSound() {
   loadSettings()
   if (cachedMuted) return

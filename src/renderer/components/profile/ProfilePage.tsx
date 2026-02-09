@@ -228,7 +228,7 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
           {/* Info */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-white font-bold text-base truncate">{username || 'Grinder'}</span>
+              <span className="text-white font-bold text-base truncate">{username || 'Idly'}</span>
               <span className="text-cyber-neon font-mono text-xs">Lv.{level}</span>
             </div>
 

@@ -117,6 +117,36 @@ create policy "Users can insert own achievements"
   on public.user_achievements for insert
   with check (auth.uid() = user_id);
 
+-- DMs between friends. Enable Realtime in Supabase: Database → Replication → public.messages.
+create table if not exists public.messages (
+  id uuid primary key default uuid_generate_v4(),
+  sender_id uuid references public.profiles(id) on delete cascade not null,
+  receiver_id uuid references public.profiles(id) on delete cascade not null,
+  body text not null,
+  created_at timestamptz default now(),
+  read_at timestamptz
+);
+
+create index if not exists idx_messages_receiver on public.messages(receiver_id);
+create index if not exists idx_messages_sender on public.messages(sender_id);
+create index if not exists idx_messages_created on public.messages(created_at desc);
+
+alter table public.messages enable row level security;
+
+-- Only participants can read messages (and must be friends — check in app or add FK to friendships)
+create policy "Users can read own DMs"
+  on public.messages for select
+  using (auth.uid() = sender_id or auth.uid() = receiver_id);
+
+create policy "Users can send messages as sender"
+  on public.messages for insert
+  with check (auth.uid() = sender_id);
+
+create policy "Receiver can mark as read"
+  on public.messages for update
+  using (auth.uid() = receiver_id)
+  with check (auth.uid() = receiver_id);
+
 -- Trigger to create profile on signup
 create or replace function public.handle_new_user()
 returns trigger as $$

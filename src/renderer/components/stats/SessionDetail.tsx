@@ -62,11 +62,11 @@ const CATEGORY_LABELS: Record<string, string> = {
   other: 'Other',
 }
 
-/** Exclude the Grinder app itself from stats. */
-function isGrinderApp(name: string): boolean {
+/** Exclude the Idly app itself from stats. */
+function isIdlyApp(name: string): boolean {
   if (!name || typeof name !== 'string') return false
   const n = name.toLowerCase()
-  return n.includes('grinder') || n === 'grind tracker' || n === 'grind_tracker' || n === 'electron'
+  return n.includes('grinder') || n.includes('idly') || n === 'grind tracker' || n === 'grind_tracker' || n === 'electron'
 }
 
 function formatMs(ms: number): string {
@@ -140,8 +140,8 @@ export function SessionDetail({ sessionId, onBack }: SessionDetailProps) {
     }
   }, [sessionId])
 
-  // Filter out Grinder
-  const filtered = activities.filter((a) => !isGrinderApp(a.app_name || ''))
+  // Filter out Idly
+  const filtered = activities.filter((a) => !isIdlyApp(a.app_name || ''))
 
   // Aggregate by app with window titles
   const appMap = new Map<string, AppEntry>()

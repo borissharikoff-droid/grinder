@@ -18,10 +18,10 @@ export function FriendList({ friends, onSelectFriend }: FriendListProps) {
     )
   }
 
-  // Sort: online first, then by level desc
+  // Sort: online first, then by total skill level desc
   const sorted = [...friends].sort((a, b) => {
     if (a.is_online !== b.is_online) return a.is_online ? -1 : 1
-    return (b.level || 1) - (a.level || 1)
+    return (b.total_skill_level ?? 0) - (a.total_skill_level ?? 0)
   })
 
   const parseActivity = (raw: string | null): { activityLabel: string; appName: string | null } => {
@@ -85,8 +85,7 @@ export function FriendList({ friends, onSelectFriend }: FriendListProps) {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5 mb-0.5">
                 <span className="text-sm font-semibold text-white truncate">{f.username || 'Anonymous'}</span>
-                {/* Level */}
-                <span className="text-[10px] text-cyber-neon font-mono shrink-0">Lv.{f.level || 1}</span>
+                <span className="text-[10px] text-cyber-neon font-mono shrink-0" title="Total skill level">{(f.total_skill_level ?? 0)}/{MAX_TOTAL_SKILL_LEVEL}</span>
                 {/* Equipped badges */}
                 {badges.map(badge => badge && (
                   <span
@@ -148,19 +147,13 @@ export function FriendList({ friends, onSelectFriend }: FriendListProps) {
               )}
             </div>
 
-            {/* Total skill lvl + streak + XP on right */}
+            {/* Streak on right */}
             <div className="shrink-0 text-right flex flex-col items-end gap-0.5">
-              <div className="text-[10px] text-gray-400 font-mono">
-                {(f.total_skill_level ?? 0)}/{MAX_TOTAL_SKILL_LEVEL}
-              </div>
               {f.streak_count > 0 && (
                 <div className="text-[10px] text-orange-400 font-mono">
                   🔥 {f.streak_count}d
                 </div>
               )}
-              <div className="text-[9px] text-gray-600 font-mono">
-                {f.xp || 0} XP
-              </div>
             </div>
           </motion.button>
         )

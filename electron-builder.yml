@@ -1,5 +1,5 @@
-appId: com.grinder.app
-productName: Grinder
+appId: com.idly.app
+productName: Idly
 directories:
   output: release
 files:
@@ -23,7 +23,7 @@ nsis:
   oneClick: true
   perMachine: false
   allowToChangeInstallationDirectory: false
-  artifactName: "Grinder-Setup-${version}.exe"
+  artifactName: "Idly-Setup-${version}.exe"
 forceCodeSigning: false
 publish:
   provider: github

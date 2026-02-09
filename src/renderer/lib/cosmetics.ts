@@ -67,7 +67,7 @@ export const BADGES: Badge[] = [
   {
     id: 'dedicated',
     name: 'Dedicated',
-    label: 'GRINDER',
+    label: 'IDLY',
     icon: '💎',
     color: '#4FC3F7',
     description: '10 sessions completed',

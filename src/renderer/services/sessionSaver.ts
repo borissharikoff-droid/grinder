@@ -64,7 +64,7 @@ export function saveSessionBrowser(
   const browserActivities = JSON.parse(localStorage.getItem('grinder_activities') || '{}')
   browserActivities[sessionId] = [{
     app_name: 'Browser Session',
-    window_title: 'Grinder Web Mode',
+    window_title: 'Idly Web Mode',
     category: 'browsing',
     start_time: sessionStartTime,
     end_time: endTime,

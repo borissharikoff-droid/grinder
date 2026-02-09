@@ -12,7 +12,7 @@ const PERSONAS: PersonaResult[] = [
   { id: 'social', label: 'Social Connector', emoji: '💬', description: 'Always connected' },
   { id: 'explorer', label: 'Explorer', emoji: '🌐', description: 'Curious by nature' },
   { id: 'music_lover', label: 'Music Lover', emoji: '🎵', description: 'Vibes on point' },
-  { id: 'grinder', label: 'Grinder', emoji: '⚡', description: 'Pure focus energy' },
+  { id: 'grinder', label: 'Idly', emoji: '⚡', description: 'Pure focus energy' },
 ]
 
 /**

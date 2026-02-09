@@ -53,7 +53,7 @@ export interface LevelReward {
 export const LEVEL_REWARDS: LevelReward[] = [
   { level: 1, title: 'Newbie' },
   { level: 5, title: 'Rookie', avatar: '🎯' },
-  { level: 10, title: 'Grinder' },
+  { level: 10, title: 'Idly' },
   { level: 15, title: 'Dedicated' },
   { level: 20, title: 'Veteran', avatar: '🏆' },
   { level: 25, title: 'Expert' },

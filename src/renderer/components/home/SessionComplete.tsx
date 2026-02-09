@@ -8,7 +8,7 @@ import { getSkillById } from '../../lib/skills'
 const AUTO_DISMISS_MS = 8000
 
 export function SessionComplete() {
-  const { lastSessionSummary, skillXPGains, streakMultiplier, sessionXPEarned, levelBefore, sessionRewards, liveXP, dismissComplete } = useSessionStore()
+  const { lastSessionSummary, skillXPGains, streakMultiplier, sessionXPEarned, sessionRewards, liveXP, dismissComplete } = useSessionStore()
   const [progress, setProgress] = useState(100)
 
   useEffect(() => {
@@ -74,16 +74,6 @@ export function SessionComplete() {
                     </motion.span>
                   )}
                 </div>
-                {levelBefore > 0 && liveXP > 0 && sessionRewards.filter(r => r.title).length > 0 && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: 0.4 }}
-                    className="text-[10px] text-cyber-neon font-medium"
-                  >
-                    +{sessionRewards.filter(r => r.title).length} level{sessionRewards.filter(r => r.title).length > 1 ? 's' : ''} gained!
-                  </motion.div>
-                )}
               </div>
             )}
 

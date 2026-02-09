@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../stores/authStore'
 import { checkSocialAchievements } from '../lib/xp'
 import { useAlertStore } from '../stores/alertStore'
+import { useFriendToastStore } from '../stores/friendToastStore'
+import { useNavBadgeStore } from '../stores/navBadgeStore'
 import { unlockCosmeticsFromAchievement } from '../lib/cosmetics'
 
 export interface FriendSkill {
@@ -49,6 +51,8 @@ export function useFriends() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const pushAlert = useAlertStore((s) => s.push)
+  const pushFriendToast = useFriendToastStore((s) => s.push)
+  const previousFriendsRef = useRef<FriendProfile[] | null>(null)
 
   const fetchFriends = useCallback(async () => {
     if (!supabase || !user) {
@@ -56,6 +60,7 @@ export function useFriends() {
       setPendingRequests([])
       setLoading(false)
       setError(null)
+      useNavBadgeStore.getState().setIncomingRequestsCount(0)
       return
     }
     setError(null)
@@ -122,6 +127,28 @@ export function useFriends() {
           // user_skills table may not exist yet
         }
       }
+
+      // Friend toasts: came online / started leveling (only after we have a previous snapshot)
+      const prev = previousFriendsRef.current
+      if (prev !== null) {
+        const name = (f: FriendProfile) => f.username?.trim() || 'Friend'
+        for (const friend of friendList) {
+          const p = prev.find((x) => x.id === friend.id)
+          if (!p?.is_online && friend.is_online) {
+            pushFriendToast({ type: 'online', friendName: name(friend) })
+          }
+          const act = friend.current_activity ?? ''
+          const prevAct = p?.current_activity ?? ''
+          if (act.startsWith('Leveling ')) {
+            const skillPart = act.slice(9).split(' · ')[0].trim()
+            const prevSkillPart = prevAct.startsWith('Leveling ') ? prevAct.slice(9).split(' · ')[0].trim() : ''
+            if (skillPart && skillPart !== prevSkillPart) {
+              pushFriendToast({ type: 'leveling', friendName: name(friend), skillName: skillPart })
+            }
+          }
+        }
+      }
+      previousFriendsRef.current = friendList
       setFriends(friendList)
 
       // Check social achievements
@@ -157,15 +184,18 @@ export function useFriends() {
         })
       }
       setPendingRequests(pendingList)
+      const incoming = pendingList.filter((r) => r.direction === 'incoming').length
+      useNavBadgeStore.getState().setIncomingRequestsCount(incoming)
     } catch (e) {
       console.error('[useFriends] unexpected error:', e)
       setError(e instanceof Error ? e.message : 'Failed to load friends')
       setFriends([])
       setPendingRequests([])
+      useNavBadgeStore.getState().setIncomingRequestsCount(0)
     } finally {
       setLoading(false)
     }
-  }, [user, pushAlert])
+  }, [user, pushAlert, pushFriendToast])
 
   const acceptRequest = useCallback(async (friendshipId: string) => {
     if (!supabase) return

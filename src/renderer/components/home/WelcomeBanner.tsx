@@ -28,7 +28,7 @@ export function WelcomeBanner({ onDismiss }: WelcomeBannerProps) {
         <div className="relative">
           <img
             src={mascotImg}
-            alt="Grinder mascot"
+            alt="Idly mascot"
             className="w-20 h-20 mx-auto mb-2"
             draggable={false}
           />

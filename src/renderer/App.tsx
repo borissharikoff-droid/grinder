@@ -12,7 +12,9 @@ import { SettingsPage } from './components/settings/SettingsPage'
 import { SkillsPage } from './components/skills/SkillsPage'
 import { StreakOverlay } from './components/animations/StreakOverlay'
 import { LootDrop } from './components/alerts/LootDrop'
+import { FriendToasts } from './components/alerts/FriendToasts'
 import { SkillLevelUpModal } from './components/home/SkillLevelUpModal'
+import { useFriends } from './hooks/useFriends'
 import { UpdateBanner } from './components/UpdateBanner'
 import { useSessionStore } from './stores/sessionStore'
 import { categoryToSkillId, getSkillById } from './lib/skills'
@@ -40,6 +42,7 @@ export default function App() {
 
   useProfileSync()
   useKeyboardShortcuts()
+  useFriends() // run so friend presence polling + online/leveling toasts work on all tabs
 
   // Pre-warm audio context on first user gesture
   useEffect(() => {
@@ -118,6 +121,7 @@ export default function App() {
           )}
         </AnimatePresence>
         <LootDrop />
+        <FriendToasts />
         <SkillLevelUpModal />
       </div>
     </AuthGate>

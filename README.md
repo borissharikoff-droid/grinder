@@ -1,4 +1,4 @@
-# Grinder
+# Idly
 
 Windows productivity tracker with a session timer, activity monitoring, AI-powered analytics (DeepSeek), gamification (XP, achievements, streaks), and social features (friends, leaderboard).
 

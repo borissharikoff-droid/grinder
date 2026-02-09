@@ -167,7 +167,7 @@ export function SettingsPage() {
         />
         <ToggleRow
           label="Start with Windows"
-          sublabel="Launch Grinder on PC boot"
+          sublabel="Launch Idly on PC boot"
           enabled={autoLaunch}
           onChange={handleAutoLaunch}
         />
@@ -269,7 +269,7 @@ export function SettingsPage() {
         </motion.button>
       )}
 
-      <p className="text-center text-xs text-gray-600 pb-2">Grinder v0.1.0</p>
+      <p className="text-center text-xs text-gray-600 pb-2">Idly v0.1.0</p>
     </motion.div>
   )
 }

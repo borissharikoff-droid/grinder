@@ -231,21 +231,11 @@ function startXpTicking() {
     const popupAmount = Math.max(1, Math.floor(xpEarned / 4))
     const newPopup = { id: popupId, amount: popupAmount }
 
-    // Check for level up
-    if (newLevel > prevLevel) {
-      const rewards = getRewardsInRange(prevLevel, newLevel)
-      useSessionStore.setState({
-        liveXP: newLiveXP,
-        xpPopups: [...useSessionStore.getState().xpPopups, newPopup],
-        pendingLevelUp: { level: newLevel, rewards },
-        sessionRewards: [...sessionRewards, ...rewards],
-      })
-    } else {
-      useSessionStore.setState({
-        liveXP: newLiveXP,
-        xpPopups: [...useSessionStore.getState().xpPopups, newPopup],
-      })
-    }
+    // No global level-up modal; we only use skill levels now
+    useSessionStore.setState({
+      liveXP: newLiveXP,
+      xpPopups: [...useSessionStore.getState().xpPopups, newPopup],
+    })
 
     // Auto-remove popup after 2 seconds
     setTimeout(() => {

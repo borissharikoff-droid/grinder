@@ -1,4 +1,4 @@
-# Запуск и выкладка Grinder
+# Запуск и выкладка Idly
 
 ## Запуск у себя (новая версия)
 
@@ -14,8 +14,8 @@ npm run electron:dev
 npm run electron:build
 ```
 После сборки:
-- **Без установки:** запусти `release\win-unpacked\Grinder.exe`
-- **Установщик:** в папке `release\` появится `Grinder-Setup-0.1.0.exe` — установи его как обычное приложение
+- **Без установки:** запусти `release\win-unpacked\Idly.exe`
+- **Установщик:** в папке `release\` появится `Idly-Setup-0.1.0.exe` — установи его как обычное приложение
 
 ---
 
@@ -42,6 +42,6 @@ npm run electron:build
 4. **GitHub Actions** (workflow `.github/workflows/release.yml`) при пуше тега `v*`:
    - соберёт проект на Windows;
    - создаст GitHub Release с этим тегом;
-   - загрузит в Release установщик `Grinder-Setup-*.exe`.
+   - загрузит в Release установщик `Idly-Setup-*.exe`.
 
 Готовый релиз будет в репозитории: **Releases** → тег `v0.1.1` → скачивание `.exe`.

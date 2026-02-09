@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
-import { levelFromTotalXP, xpProgressInLevel, getStreakMultiplier, getTitleForLevel } from '../../lib/xp'
+import { getStreakMultiplier } from '../../lib/xp'
+import { skillLevelFromXP, MAX_TOTAL_SKILL_LEVEL } from '../../lib/skills'
 import { detectPersona } from '../../lib/persona'
 import { FRAMES, BADGES, getEquippedFrame, getEquippedBadges } from '../../lib/cosmetics'
 
@@ -13,9 +14,8 @@ export function ProfileBar({ onNavigateProfile }: ProfileBarProps) {
   const { user, signOut } = useAuthStore()
   const [username, setUsername] = useState('')
   const [avatar, setAvatar] = useState('🤖')
-  const [totalXP, setTotalXP] = useState(0)
+  const [totalSkillLevel, setTotalSkillLevel] = useState(0)
   const [persona, setPersona] = useState<{ emoji: string; label: string; description: string } | null>(null)
-  const [showXPTooltip, setShowXPTooltip] = useState(false)
   const [showPersonaTooltip, setShowPersonaTooltip] = useState(false)
   const [frameId, setFrameId] = useState<string | null>(null)
   const [badgeIds, setBadgeIds] = useState<string[]>([])
@@ -28,7 +28,7 @@ export function ProfileBar({ onNavigateProfile }: ProfileBarProps) {
     if (supabase && user) {
       supabase.from('profiles').select('username, avatar_url').eq('id', user.id).single().then(({ data }) => {
         if (data) {
-          setUsername(data.username || 'Grinder')
+          setUsername(data.username || 'Idly')
           setAvatar(data.avatar_url || '🤖')
         }
         setLoaded(true)
@@ -37,8 +37,11 @@ export function ProfileBar({ onNavigateProfile }: ProfileBarProps) {
       setLoaded(true)
     }
     const api = window.electronAPI
-    if (api?.db?.getLocalStat) {
-      api.db.getLocalStat('total_xp').then((v) => setTotalXP(parseInt(v || '0', 10)))
+    if (api?.db?.getAllSkillXP) {
+      api.db.getAllSkillXP().then((rows: { skill_id: string; total_xp: number }[]) => {
+        const sum = (rows || []).reduce((s, r) => s + skillLevelFromXP(r.total_xp), 0)
+        setTotalSkillLevel(sum)
+      })
     }
     setFrameId(getEquippedFrame())
     setBadgeIds(getEquippedBadges())
@@ -54,10 +57,6 @@ export function ProfileBar({ onNavigateProfile }: ProfileBarProps) {
       })
     }
   }, [user])
-
-  const level = levelFromTotalXP(totalXP)
-  const { current, needed } = xpProgressInLevel(totalXP)
-  const pct = Math.min(100, (current / needed) * 100)
 
   if (!supabase || !user) return null
 
@@ -85,15 +84,9 @@ export function ProfileBar({ onNavigateProfile }: ProfileBarProps) {
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-white font-medium text-sm leading-none truncate">{username}</span>
 
-            <div className="relative" onMouseEnter={() => setShowXPTooltip(true)} onMouseLeave={() => setShowXPTooltip(false)}>
-              <span className="text-cyber-neon font-mono text-[11px] leading-none cursor-default">Lv.{level}</span>
-              <span className="text-gray-400 text-[10px] font-medium ml-0.5">{getTitleForLevel(level)}</span>
-              {showXPTooltip && (
-                <div className="absolute top-full left-0 mt-1 px-2 py-1 rounded-lg bg-discord-card border border-white/10 text-[10px] text-gray-300 font-mono whitespace-nowrap z-20 shadow-lg">
-                  {current}/{needed} XP to Lv.{level + 1} · Total: {totalXP} XP
-                </div>
-              )}
-            </div>
+            <span className="text-cyber-neon font-mono text-[11px] leading-none cursor-default" title="Total skill level">
+              {totalSkillLevel}/{MAX_TOTAL_SKILL_LEVEL}
+            </span>
 
             {badgeIds.map(bId => {
               const badge = BADGES.find(b => b.id === bId)
@@ -134,10 +127,6 @@ export function ProfileBar({ onNavigateProfile }: ProfileBarProps) {
         </button>
       </div>
 
-      {/* XP bar — same width as top row */}
-      <div className="w-full max-w-[260px] h-1 rounded-full bg-discord-dark overflow-hidden mt-2">
-        <div className="h-full bg-gradient-to-r from-cyber-neon to-discord-accent rounded-full transition-all" style={{ width: `${pct}%` }} />
-      </div>
     </div>
   )
 }

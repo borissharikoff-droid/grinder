@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../stores/authStore'
-import { levelFromTotalXP } from '../lib/xp'
+import { skillLevelFromXP } from '../lib/skills'
 import { getEquippedBadges, getEquippedFrame } from '../lib/cosmetics'
 
 export function useProfileSync() {
@@ -13,20 +13,22 @@ export function useProfileSync() {
 
     const sync = async () => {
       if (!supabase || !user) return
-      if (!window.electronAPI?.db?.getLocalStat || !window.electronAPI?.db?.getStreak) return
-      const [xpStr, streak] = await Promise.all([
-        window.electronAPI.db.getLocalStat('total_xp'),
-        window.electronAPI.db.getStreak(),
+      if (!window.electronAPI?.db?.getStreak) return
+      const api = window.electronAPI
+      let totalSkillLevel = 0
+      if (api?.db?.getAllSkillXP) {
+        const rows = (await api.db.getAllSkillXP()) as { skill_id: string; total_xp: number }[]
+        totalSkillLevel = (rows || []).reduce((sum, r) => sum + skillLevelFromXP(r.total_xp), 0)
+      }
+      const [streak] = await Promise.all([
+        api.db.getStreak(),
       ])
-      const totalXP = parseInt(xpStr || '0', 10) || 0
-      const level = levelFromTotalXP(totalXP)
       const equippedBadges = getEquippedBadges()
       const equippedFrame = getEquippedFrame()
 
-      // Core profile fields (always exist)
+      // Sync total skill level as "level" so friends/leaderboard sort by it
       await supabase.from('profiles').update({
-        xp: totalXP,
-        level,
+        level: totalSkillLevel,
         streak_count: streak,
         updated_at: new Date().toISOString(),
       }).eq('id', user.id)

@@ -8,7 +8,6 @@ import { SessionComplete } from './SessionComplete'
 import { MotivationBanner } from './MotivationBanner'
 import { WelcomeBanner } from './WelcomeBanner'
 import { GoalWidget } from './GoalWidget'
-import { LevelUpModal } from './LevelUpModal'
 import { useSessionStore } from '../../stores/sessionStore'
 import mascotImg from '../../assets/mascot.png'
 
@@ -17,7 +16,7 @@ interface HomePageProps {
 }
 
 export function HomePage({ onNavigateProfile }: HomePageProps) {
-  const { showComplete, setCurrentActivity, status, pendingLevelUp } = useSessionStore()
+  const { showComplete, setCurrentActivity, status } = useSessionStore()
   const [showWelcome, setShowWelcome] = useState(false)
 
   useEffect(() => {
@@ -103,7 +102,6 @@ export function HomePage({ onNavigateProfile }: HomePageProps) {
         {showComplete && <SessionComplete />}
       </AnimatePresence>
 
-      {pendingLevelUp && <LevelUpModal />}
     </div>
   )
 }

@@ -36,7 +36,7 @@ export function PendingRequests({ requests, onAccept, onReject }: PendingRequest
                   <p className="text-sm font-medium text-white truncate">
                     {req.profile.username || 'Anonymous'}
                   </p>
-                  <p className="text-xs text-gray-500">Lv.{req.profile.level}</p>
+                  <p className="text-xs text-gray-500">{req.profile.level ?? 0} skill lvl</p>
                 </div>
                 <div className="flex gap-1.5 shrink-0">
                   <motion.button
@@ -74,7 +74,7 @@ export function PendingRequests({ requests, onAccept, onReject }: PendingRequest
                 <p className="text-sm font-medium text-white truncate">
                   {req.profile.username || 'Anonymous'}
                 </p>
-                <p className="text-xs text-gray-500">Lv.{req.profile.level}</p>
+                <p className="text-xs text-gray-500">{req.profile.level ?? 0} skill lvl</p>
               </div>
               <span className="text-xs text-gray-500 italic shrink-0">pending</span>
               <motion.button

@@ -101,12 +101,12 @@ describe('getTitleForLevel', () => {
     expect(getTitleForLevel(5)).toBe('Rookie')
   })
 
-  it('returns Grinder for level 10', () => {
-    expect(getTitleForLevel(10)).toBe('Grinder')
+  it('returns Idly for level 10', () => {
+    expect(getTitleForLevel(10)).toBe('Idly')
   })
 
-  it('returns Grinder for level 12 (between 10 and 15)', () => {
-    expect(getTitleForLevel(12)).toBe('Grinder')
+  it('returns Idly for level 12 (between 10 and 15)', () => {
+    expect(getTitleForLevel(12)).toBe('Idly')
   })
 
   it('returns Transcendent for level 99', () => {
@@ -119,7 +119,7 @@ describe('getRewardsInRange', () => {
     const rewards = getRewardsInRange(1, 10)
     expect(rewards.length).toBe(2) // level 5 and 10
     expect(rewards.some(r => r.title === 'Rookie')).toBe(true)
-    expect(rewards.some(r => r.title === 'Grinder')).toBe(true)
+    expect(rewards.some(r => r.title === 'Idly')).toBe(true)
   })
 
   it('returns empty for no rewards in range', () => {

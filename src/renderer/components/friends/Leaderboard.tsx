@@ -9,8 +9,7 @@ interface LeaderboardRow {
   username: string | null
   avatar_url: string | null
   total_seconds: number
-  level: number
-  xp: number
+  total_skill_level: number
   streak_count: number
   equipped_badges?: string[]
   equipped_frame?: string | null
@@ -47,7 +46,7 @@ export function Leaderboard() {
           console.warn('Leaderboard profiles error:', profilesError.message)
         }
 
-        // Fetch session totals — filter by relevant users only
+        // Fetch session totals and user_skills for total skill level
         const byUser: Record<string, number> = {}
         try {
           const { data: sums } = await supabase
@@ -61,18 +60,27 @@ export function Leaderboard() {
           // session_summaries table may not exist yet
         }
 
+        const skillLevelByUser: Record<string, number> = {}
+        try {
+          const { data: skillsRows } = await supabase.from('user_skills').select('user_id, level').in('user_id', ids)
+          ;(skillsRows || []).forEach((r: { user_id: string; level: number }) => {
+            skillLevelByUser[r.user_id] = (skillLevelByUser[r.user_id] || 0) + (r.level || 0)
+          })
+        } catch {
+          // user_skills may not exist
+        }
+
         const list: LeaderboardRow[] = (profiles || []).map((p) => ({
           id: p.id,
           username: p.username,
           avatar_url: p.avatar_url,
           total_seconds: byUser[p.id] || 0,
-          level: p.level || 1,
-          xp: p.xp || 0,
+          total_skill_level: skillLevelByUser[p.id] ?? (p.level || 0),
           streak_count: p.streak_count || 0,
           equipped_badges: p.equipped_badges || [],
           equipped_frame: p.equipped_frame || null,
         }))
-        list.sort((a, b) => b.total_seconds - a.total_seconds)
+        list.sort((a, b) => b.total_skill_level - a.total_skill_level)
         setRows(list)
       } catch (err) {
         console.warn('Leaderboard fetch error:', err)
@@ -145,7 +153,7 @@ export function Leaderboard() {
                     {r.username || 'Anonymous'}
                     {isMe && <span className="text-gray-500 ml-1">(you)</span>}
                   </span>
-                  <span className="text-[9px] text-gray-500 font-mono shrink-0">Lv.{r.level}</span>
+                  <span className="text-[9px] text-gray-500 font-mono shrink-0" title="Total skill level">{r.total_skill_level}</span>
                   {badges.slice(0, 2).map(badge => badge && (
                     <span
                       key={badge.id}
@@ -161,10 +169,10 @@ export function Leaderboard() {
                 )}
               </div>
 
-              {/* Time */}
+              {/* Total skill level + grind time */}
               <div className="shrink-0 text-right">
-                <p className="text-xs text-cyber-neon font-mono font-bold">{formatDuration(r.total_seconds)}</p>
-                <p className="text-[9px] text-gray-600 font-mono">{r.xp} XP</p>
+                <p className="text-xs text-cyber-neon font-mono font-bold">{r.total_skill_level}</p>
+                <p className="text-[9px] text-gray-600 font-mono">{formatDuration(r.total_seconds)}</p>
               </div>
             </motion.div>
           )

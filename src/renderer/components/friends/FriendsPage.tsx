@@ -1,16 +1,18 @@
 import { useState } from 'react'
 import { useFriends } from '../../hooks/useFriends'
+import { useChat } from '../../hooks/useChat'
 import { FriendList } from './FriendList'
 import { AddFriend } from './AddFriend'
 import { FriendProfile } from './FriendProfile'
 import { PendingRequests } from './PendingRequests'
 import { Leaderboard } from './Leaderboard'
 import { FriendCompare } from './FriendCompare'
+import { ChatThread } from './ChatThread'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
 import type { FriendProfile as FriendProfileType } from '../../hooks/useFriends'
 
-type FriendView = 'list' | 'profile' | 'compare'
+type FriendView = 'list' | 'profile' | 'compare' | 'chat'
 
 export function FriendsPage() {
   const { user } = useAuthStore()
@@ -18,6 +20,8 @@ export function FriendsPage() {
   const [selected, setSelected] = useState<FriendProfileType | null>(null)
   const [view, setView] = useState<FriendView>('list')
   const [showLeaderboard, setShowLeaderboard] = useState(false)
+  const peerId = view === 'chat' && selected ? selected.id : null
+  const chat = useChat(peerId)
 
   const incomingCount = pendingRequests.filter((r) => r.direction === 'incoming').length
 
@@ -31,11 +35,23 @@ export function FriendsPage() {
         </div>
       ) : view === 'compare' && selected ? (
         <FriendCompare friend={selected} onBack={() => setView('profile')} />
+      ) : view === 'chat' && selected ? (
+        <ChatThread
+          profile={selected}
+          onBack={() => { setView('profile') }}
+          messages={chat.messages}
+          loading={chat.loading}
+          sending={chat.sending}
+          getConversation={chat.getConversation}
+          sendMessage={chat.sendMessage}
+          markConversationRead={chat.markConversationRead}
+        />
       ) : view === 'profile' && selected ? (
         <FriendProfile
           profile={selected}
           onBack={() => { setSelected(null); setView('list') }}
           onCompare={() => setView('compare')}
+          onMessage={() => setView('chat')}
         />
       ) : (
         <div className="space-y-4">

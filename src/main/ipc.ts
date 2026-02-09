@@ -249,7 +249,7 @@ export function registerIpcHandlers() {
     })
 
     const ext = format === 'csv' ? 'csv' : 'json'
-    const defaultPath = path.join(app.getPath('documents'), `grinder-export.${ext}`)
+    const defaultPath = path.join(app.getPath('documents'), `idly-export.${ext}`)
 
     const { filePath } = await dialog.showSaveDialog({
       title: 'Export Sessions',

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
-import { levelFromTotalXP } from '../../lib/xp'
+import { skillLevelFromXP } from '../../lib/skills'
 import { FRAMES } from '../../lib/cosmetics'
 import type { FriendProfile } from '../../hooks/useFriends'
 
@@ -12,8 +12,7 @@ interface CompareProps {
 }
 
 interface UserStats {
-  level: number
-  xp: number
+  totalSkillLevel: number
   streak: number
   totalGrindSeconds: number
   totalSessions: number
@@ -80,21 +79,21 @@ export function FriendCompare({ friend, onBack }: CompareProps) {
       .select('achievement_id')
       .eq('user_id', user.id)
 
-    // Also get local stats for more accurate data
     const api = window.electronAPI
-    let localXP = 0
+    let myTotalSkillLevel = 0
     let localStreak = 0
-    if (api?.db) {
-      const xpStr = await api.db.getLocalStat('total_xp')
-      localXP = parseInt(xpStr || '0', 10) || 0
+    if (api?.db?.getAllSkillXP) {
+      const rows = (await api.db.getAllSkillXP()) as { skill_id: string; total_xp: number }[]
+      myTotalSkillLevel = (rows || []).reduce((s, r) => s + skillLevelFromXP(r.total_xp), 0)
+    }
+    if (api?.db?.getStreak) {
       localStreak = await api.db.getStreak()
     }
 
     const myTotalSeconds = (mySessions || []).reduce((s, r) => s + (r as { duration_seconds: number }).duration_seconds, 0)
 
     setMe({
-      level: levelFromTotalXP(localXP || myProfile?.xp || 0),
-      xp: localXP || myProfile?.xp || 0,
+      totalSkillLevel: myTotalSkillLevel,
       streak: localStreak || myProfile?.streak_count || 0,
       totalGrindSeconds: myTotalSeconds,
       totalSessions: (mySessions || []).length,
@@ -116,8 +115,7 @@ export function FriendCompare({ friend, onBack }: CompareProps) {
     const friendTotalSeconds = (friendSessions || []).reduce((s, r) => s + (r as { duration_seconds: number }).duration_seconds, 0)
 
     setThem({
-      level: friend.level || 1,
-      xp: friend.xp || 0,
+      totalSkillLevel: friend.total_skill_level ?? 0,
       streak: friend.streak_count || 0,
       totalGrindSeconds: friendTotalSeconds,
       totalSessions: (friendSessions || []).length,
@@ -142,8 +140,7 @@ export function FriendCompare({ friend, onBack }: CompareProps) {
 
   // Score: who wins more categories
   const comparisons = [
-    { my: me.level, their: them.level },
-    { my: me.xp, their: them.xp },
+    { my: me.totalSkillLevel, their: them.totalSkillLevel },
     { my: me.streak, their: them.streak },
     { my: me.totalGrindSeconds, their: them.totalGrindSeconds },
     { my: me.totalSessions, their: them.totalSessions },
@@ -213,8 +210,7 @@ export function FriendCompare({ friend, onBack }: CompareProps) {
 
       {/* Detailed comparisons */}
       <div className="rounded-2xl bg-discord-card/80 border border-white/10 p-4 divide-y divide-white/5">
-        <StatRow label="Level" myVal={me.level} theirVal={them.level} />
-        <StatRow label="Total XP" myVal={me.xp} theirVal={them.xp} />
+        <StatRow label="Total skill lvl" myVal={me.totalSkillLevel} theirVal={them.totalSkillLevel} />
         <StatRow label="Streak" myVal={me.streak} theirVal={them.streak} suffix="d" />
         <div className="flex items-center gap-2 py-2">
           <div className={`flex-1 text-right font-mono text-sm font-bold ${me.totalGrindSeconds > them.totalGrindSeconds ? 'text-cyber-neon' : me.totalGrindSeconds === them.totalGrindSeconds ? 'text-white' : 'text-gray-500'}`}>

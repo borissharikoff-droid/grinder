@@ -4,12 +4,13 @@ import { supabase } from '../../lib/supabase'
 import type { FriendProfile as FriendProfileType } from '../../hooks/useFriends'
 import { FRAMES, BADGES } from '../../lib/cosmetics'
 import { getSkillById, getSkillByName } from '../../lib/skills'
-import { ACHIEVEMENTS, xpProgressInLevel } from '../../lib/xp'
+import { ACHIEVEMENTS } from '../../lib/xp'
 
 interface FriendProfileProps {
   profile: FriendProfileType
   onBack: () => void
   onCompare?: () => void
+  onMessage?: () => void
 }
 
 interface SessionSummary {
@@ -18,7 +19,7 @@ interface SessionSummary {
   start_time: string
 }
 
-export function FriendProfile({ profile, onBack, onCompare }: FriendProfileProps) {
+export function FriendProfile({ profile, onBack, onCompare, onMessage }: FriendProfileProps) {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [achievements, setAchievements] = useState<string[]>([])
 
@@ -59,8 +60,7 @@ export function FriendProfile({ profile, onBack, onCompare }: FriendProfileProps
   const { activityLabel, appName } = parseActivity(profile.current_activity ?? null)
   const isLeveling = profile.is_online && activityLabel.startsWith('Leveling ')
   const levelingSkill = isLeveling ? activityLabel.replace('Leveling ', '') : null
-  const { current, needed } = xpProgressInLevel(profile.xp || 0)
-  const xpPct = Math.min(100, (current / needed) * 100)
+  const totalSkillLevel = profile.total_skill_level ?? 0
 
   // Unlocked achievements details
   const unlockedAchievements = ACHIEVEMENTS.filter(a => achievements.includes(a.id))
@@ -77,14 +77,24 @@ export function FriendProfile({ profile, onBack, onCompare }: FriendProfileProps
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
           <span className="font-mono text-xs">Back</span>
         </button>
-        {onCompare && (
-          <button
-            onClick={onCompare}
-            className="text-xs px-3 py-1 rounded-full border border-cyber-neon/30 text-cyber-neon bg-cyber-neon/10 hover:bg-cyber-neon/20 transition-colors font-medium"
-          >
-            ⚔️ Compare
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {onMessage && (
+            <button
+              onClick={onMessage}
+              className="text-xs px-3 py-1 rounded-full border border-cyber-neon/30 text-cyber-neon bg-cyber-neon/10 hover:bg-cyber-neon/20 transition-colors font-medium"
+            >
+              💬 Message
+            </button>
+          )}
+          {onCompare && (
+            <button
+              onClick={onCompare}
+              className="text-xs px-3 py-1 rounded-full border border-cyber-neon/30 text-cyber-neon bg-cyber-neon/10 hover:bg-cyber-neon/20 transition-colors font-medium"
+            >
+              ⚔️ Compare
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Profile Card */}
@@ -119,7 +129,7 @@ export function FriendProfile({ profile, onBack, onCompare }: FriendProfileProps
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-white font-bold text-base truncate">{profile.username || 'Anonymous'}</span>
-              <span className="text-cyber-neon font-mono text-xs">Lv.{profile.level || 1}</span>
+              <span className="text-cyber-neon font-mono text-xs" title="Total skill level">{totalSkillLevel}</span>
             </div>
 
             {/* Badges row */}
@@ -163,30 +173,15 @@ export function FriendProfile({ profile, onBack, onCompare }: FriendProfileProps
               )}
             </div>
 
-            {/* XP bar */}
-            <div>
-              <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${xpPct}%` }}
-                  transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-                  className="h-full rounded-full bg-gradient-to-r from-cyber-neon to-discord-accent"
-                />
-              </div>
-              <div className="flex items-center justify-between mt-0.5">
-                <span className="text-[9px] text-gray-600 font-mono">{current}/{needed} XP</span>
-                <span className="text-[9px] text-gray-600 font-mono">{profile.xp || 0} total</span>
-              </div>
             </div>
-          </div>
         </div>
       </div>
 
       {/* Quick Stats */}
       <div className="grid grid-cols-3 gap-2">
         <div className="rounded-xl bg-discord-card/80 border border-white/5 p-2.5 text-center">
-          <p className="text-[10px] text-gray-500 font-mono uppercase">Level</p>
-          <p className="text-lg font-mono font-bold text-cyber-neon">{profile.level || 1}</p>
+          <p className="text-[10px] text-gray-500 font-mono uppercase">Skill lvl</p>
+          <p className="text-lg font-mono font-bold text-cyber-neon">{totalSkillLevel}</p>
         </div>
         <div className="rounded-xl bg-discord-card/80 border border-white/5 p-2.5 text-center">
           <p className="text-[10px] text-gray-500 font-mono uppercase">Streak</p>

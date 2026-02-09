@@ -1,5 +1,5 @@
 {
-  "name": "grinder",
+  "name": "idly",
   "version": "0.1.0",
   "description": "Windows productivity tracker with session timer, activity monitoring, and gamification",
   "main": "dist/main/index.js",
@@ -45,8 +45,8 @@
     "wait-on": "^8.0.1"
   },
   "build": {
-    "appId": "com.grinder.app",
-    "productName": "Grinder",
+    "appId": "com.idly.app",
+    "productName": "Idly",
     "directories": {
       "output": "release"
     },
