@@ -497,10 +497,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     set({ pendingSkillLevelUpSkill: null })
   },
 
-  setGrindPageActive(v: boolean) {
-    set({ isGrindPageActive: v })
-  },
-
   async checkStreakOnMount(): Promise<number> {
     if (typeof window !== 'undefined' && window.electronAPI?.db?.getStreak) {
       const streak = await window.electronAPI.db.getStreak()
