@@ -69,7 +69,7 @@ const CH = {
     setAutoLaunch: 'settings:setAutoLaunch',
   },
   notify: { show: 'notify:show' },
-  data: { exportSessions: 'data:exportSessions', getLogsPath: 'data:getLogsPath' },
+  data: { exportSessions: 'data:exportSessions', getLogsPath: 'data:getLogsPath', openLogsFolder: 'data:openLogsFolder' },
   updater: { status: 'updater:status', install: 'updater:install' },
 }
 
