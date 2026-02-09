@@ -3,6 +3,8 @@ import { categoryToSkillId, getSkillById } from '../../lib/skills'
 
 export function CurrentActivity() {
   const currentActivity = useSessionStore((s) => s.currentActivity)
+  const sessionSkillXP = useSessionStore((s) => s.sessionSkillXP)
+  const status = useSessionStore((s) => s.status)
   const isBrowser = typeof window === 'undefined' || !window.electronAPI
 
   if (isBrowser) {
@@ -30,6 +32,7 @@ export function CurrentActivity() {
   const skillId = categoryToSkillId(currentActivity.category)
   const skill = getSkillById(skillId)
   const skillLabel = skill ? skill.name : 'Grinding'
+  const xpThisSession = status === 'running' ? (sessionSkillXP[skillId] ?? 0) : 0
   const title = currentActivity.windowTitle
     ? currentActivity.windowTitle.slice(0, 35) + (currentActivity.windowTitle.length > 35 ? '...' : '')
     : ''
@@ -39,7 +42,12 @@ export function CurrentActivity() {
       <div className="flex items-center gap-2.5">
         <span className="text-lg">{skill?.icon ?? '📱'}</span>
         <div className="flex-1 min-w-0">
-          <p className="text-cyber-neon/95 text-sm font-medium truncate">Leveling {skillLabel}</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-cyber-neon/95 text-sm font-medium truncate">Leveling {skillLabel}</p>
+            {xpThisSession > 0 && (
+              <span className="text-[11px] font-mono text-gray-400">+{xpThisSession} XP</span>
+            )}
+          </div>
           <p className="text-gray-400 text-xs truncate">{currentActivity.appName}{title ? ` · ${title}` : ''}</p>
         </div>
       </div>

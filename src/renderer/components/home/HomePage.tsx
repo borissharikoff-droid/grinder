@@ -8,7 +8,6 @@ import { SessionComplete } from './SessionComplete'
 import { MotivationBanner } from './MotivationBanner'
 import { WelcomeBanner } from './WelcomeBanner'
 import { GoalWidget } from './GoalWidget'
-import { XPPopup } from './XPPopup'
 import { LevelUpModal } from './LevelUpModal'
 import { useSessionStore } from '../../stores/sessionStore'
 import mascotImg from '../../assets/mascot.png'
@@ -104,7 +103,6 @@ export function HomePage({ onNavigateProfile }: HomePageProps) {
         {showComplete && <SessionComplete />}
       </AnimatePresence>
 
-      {status !== 'idle' && <XPPopup />}
       {pendingLevelUp && <LevelUpModal />}
     </div>
   )

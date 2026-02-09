@@ -6,6 +6,7 @@ import { processAchievementsElectron } from '../services/achievementService'
 import { syncSkillsToSupabase, syncSessionToSupabase } from '../services/supabaseSync'
 import { useAlertStore } from './alertStore'
 import { getAchievementById, levelFromTotalXP, getRewardsInRange, LevelReward } from '../lib/xp'
+import { categoryToSkillId } from '../lib/skills'
 
 type SessionStatus = 'idle' | 'running' | 'paused'
 
@@ -50,6 +51,8 @@ interface SessionStore {
   pendingLevelUp: { level: number; rewards: LevelReward[] } | null
   /** All rewards unlocked during this session */
   sessionRewards: LevelReward[]
+  /** XP per skill this session (for live display during grind; 1 per second in current category) */
+  sessionSkillXP: Record<string, number>
   tick: () => void
   start: () => void
   stop: () => void
@@ -271,14 +274,20 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   levelBefore: 1,
   pendingLevelUp: null,
   sessionRewards: [],
+  sessionSkillXP: {},
   isGrindPageActive: true,
   setGrindPageActive: (v) => set({ isGrindPageActive: v }),
 
   tick() {
-    const { sessionStartTime } = get()
+    const { sessionStartTime, status, currentActivity, sessionSkillXP } = get()
     if (!sessionStartTime) return
     const elapsed = Math.floor((Date.now() - sessionStartTime - pausedAccumulated) / 1000)
-    set({ elapsedSeconds: Math.max(0, elapsed) })
+    const updates: { elapsedSeconds: number; sessionSkillXP?: Record<string, number> } = { elapsedSeconds: Math.max(0, elapsed) }
+    if (status === 'running' && currentActivity) {
+      const skillId = categoryToSkillId(currentActivity.category)
+      updates.sessionSkillXP = { ...sessionSkillXP, [skillId]: (sessionSkillXP[skillId] ?? 0) + 1 }
+    }
+    set(updates)
   },
 
   async start() {
@@ -296,7 +305,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       levelBefore = levelFromTotalXP(totalXP)
     }
 
-    set({ status: 'running', elapsedSeconds: 0, sessionId, sessionStartTime, isAfkPaused: false, liveXP: 0, xpPopups: [], levelBefore, pendingLevelUp: null, sessionRewards: [] })
+    set({ status: 'running', elapsedSeconds: 0, sessionId, sessionStartTime, isAfkPaused: false, liveXP: 0, xpPopups: [], levelBefore, pendingLevelUp: null, sessionRewards: [], sessionSkillXP: {} })
     if (api) {
       api.tracker.start()
       // Apply AFK threshold from settings
