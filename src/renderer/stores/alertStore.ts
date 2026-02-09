@@ -51,18 +51,18 @@ export const useAlertStore = create<AlertStore>((set, get) => ({
     if (currentAlert?.achievement.reward) {
       // Save unlocked reward to localStorage
       try {
-        const rewards = JSON.parse(localStorage.getItem('grinder_rewards') || '[]') as string[]
+        const rewards = JSON.parse(localStorage.getItem('idly_rewards') || '[]') as string[]
         const key = `${currentAlert.achievement.reward.type}:${currentAlert.achievement.reward.value}`
         if (!rewards.includes(key)) {
           rewards.push(key)
-          localStorage.setItem('grinder_rewards', JSON.stringify(rewards))
+          localStorage.setItem('idly_rewards', JSON.stringify(rewards))
         }
         // If avatar reward, add to unlocked avatars
         if (currentAlert.achievement.reward.type === 'avatar') {
-          const avatars = JSON.parse(localStorage.getItem('grinder_unlocked_avatars') || '[]') as string[]
+          const avatars = JSON.parse(localStorage.getItem('idly_unlocked_avatars') || '[]') as string[]
           if (!avatars.includes(currentAlert.achievement.reward.value)) {
             avatars.push(currentAlert.achievement.reward.value)
-            localStorage.setItem('grinder_unlocked_avatars', JSON.stringify(avatars))
+            localStorage.setItem('idly_unlocked_avatars', JSON.stringify(avatars))
           }
         }
         if (currentAlert.achievement.reward.type === 'skill_boost') {
@@ -70,16 +70,16 @@ export const useAlertStore = create<AlertStore>((set, get) => ({
           if (window.electronAPI?.db?.addSkillXP) {
             window.electronAPI.db.addSkillXP(currentAlert.achievement.reward.value, xp)
           } else {
-            const stored = JSON.parse(localStorage.getItem('grinder_skill_xp') || '{}') as Record<string, number>
+            const stored = JSON.parse(localStorage.getItem('idly_skill_xp') || '{}') as Record<string, number>
             stored[currentAlert.achievement.reward.value] = (stored[currentAlert.achievement.reward.value] ?? 0) + xp
-            localStorage.setItem('grinder_skill_xp', JSON.stringify(stored))
+            localStorage.setItem('idly_skill_xp', JSON.stringify(stored))
           }
         }
         if (currentAlert.achievement.reward.type === 'profile_frame') {
-          const frames = JSON.parse(localStorage.getItem('grinder_unlocked_frames') || '[]') as string[]
+          const frames = JSON.parse(localStorage.getItem('idly_unlocked_frames') || '[]') as string[]
           if (!frames.includes(currentAlert.achievement.reward.value)) {
             frames.push(currentAlert.achievement.reward.value)
-            localStorage.setItem('grinder_unlocked_frames', JSON.stringify(frames))
+            localStorage.setItem('idly_unlocked_frames', JSON.stringify(frames))
           }
         }
       } catch { /* ignore */ }

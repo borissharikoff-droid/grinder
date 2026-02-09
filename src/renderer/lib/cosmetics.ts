@@ -231,10 +231,10 @@ export const LOCKED_AVATARS: { emoji: string; unlockHint: string; achievementId:
 
 // ─── LOCAL STORAGE HELPERS ────────────────────────────────
 
-const STORAGE_BADGES = 'grinder_equipped_badges'
-const STORAGE_FRAME = 'grinder_equipped_frame'
-const STORAGE_UNLOCKED_BADGES = 'grinder_unlocked_badges'
-const STORAGE_UNLOCKED_FRAMES = 'grinder_unlocked_frames'
+const STORAGE_BADGES = 'idly_equipped_badges'
+const STORAGE_FRAME = 'idly_equipped_frame'
+const STORAGE_UNLOCKED_BADGES = 'idly_unlocked_badges'
+const STORAGE_UNLOCKED_FRAMES = 'idly_unlocked_frames'
 
 export function getEquippedBadges(): string[] {
   try { return JSON.parse(localStorage.getItem(STORAGE_BADGES) || '[]') } catch { return [] }
@@ -266,7 +266,7 @@ export function getUnlockedFrames(): string[] {
 }
 
 export function getUnlockedAvatarEmojis(): string[] {
-  try { return JSON.parse(localStorage.getItem('grinder_unlocked_avatars') || '[]') } catch { return [] }
+  try { return JSON.parse(localStorage.getItem('idly_unlocked_avatars') || '[]') } catch { return [] }
 }
 
 /** Call when an achievement is unlocked — checks if it grants a badge, frame, or avatar */
@@ -292,7 +292,7 @@ export function unlockCosmeticsFromAchievement(achievementId: string): void {
   if (lockedAvatar) {
     const current = getUnlockedAvatarEmojis()
     if (!current.includes(lockedAvatar.emoji)) {
-      localStorage.setItem('grinder_unlocked_avatars', JSON.stringify([...current, lockedAvatar.emoji]))
+      localStorage.setItem('idly_unlocked_avatars', JSON.stringify([...current, lockedAvatar.emoji]))
     }
   }
 }

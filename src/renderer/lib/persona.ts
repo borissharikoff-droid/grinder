@@ -12,7 +12,7 @@ const PERSONAS: PersonaResult[] = [
   { id: 'social', label: 'Social Connector', emoji: '💬', description: 'Always connected' },
   { id: 'explorer', label: 'Explorer', emoji: '🌐', description: 'Curious by nature' },
   { id: 'music_lover', label: 'Music Lover', emoji: '🎵', description: 'Vibes on point' },
-  { id: 'grinder', label: 'Idly', emoji: '⚡', description: 'Pure focus energy' },
+  { id: 'idly', label: 'Idly', emoji: '⚡', description: 'Pure focus energy' },
 ]
 
 /**
@@ -22,7 +22,7 @@ const PERSONAS: PersonaResult[] = [
 export function detectPersona(
   categories: { category: string; total_ms: number }[]
 ): PersonaResult {
-  if (categories.length === 0) return PERSONAS[6] // default: grinder
+  if (categories.length === 0) return PERSONAS[6] // default: idly
 
   const total = categories.reduce((sum, c) => sum + c.total_ms, 0)
   if (total === 0) return PERSONAS[6]
@@ -41,7 +41,7 @@ export function detectPersona(
   if (pct('music') >= 25) return PERSONAS[5]  // music lover
   if (pct('browsing') >= 40) return PERSONAS[4] // explorer
 
-  // Mixed — return grinder
+  // Mixed — return idly
   return PERSONAS[6]
 }
 
@@ -151,7 +151,7 @@ export function generateInsights(params: {
   if (avgSessionMin >= 60) {
     insights.push({
       icon: '⏱️',
-      text: `Avg ${avgSessionMin}min per session — marathon grinder`,
+      text: `Avg ${avgSessionMin}min per session — marathon idly`,
       type: 'praise',
     })
   } else if (avgSessionMin < 15 && totalSessions >= 3) {

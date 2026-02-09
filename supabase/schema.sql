@@ -1,4 +1,4 @@
--- Grinder Supabase schema for auth and friends/social features
+-- Idly Supabase schema for auth and friends/social features
 -- Run this in your Supabase project SQL editor after creating a project at https://supabase.com
 
 -- Enable UUID extension

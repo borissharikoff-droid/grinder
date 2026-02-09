@@ -39,7 +39,7 @@ export function SkillsPage() {
       setSkillData(rows)
     } else {
       try {
-        const stored = JSON.parse(localStorage.getItem('grinder_skill_xp') || '{}') as Record<string, number>
+        const stored = JSON.parse(localStorage.getItem('idly_skill_xp') || '{}') as Record<string, number>
         setSkillData(Object.entries(stored).map(([skill_id, total_xp]) => ({ skill_id, total_xp })))
       } catch {
         setSkillData([])

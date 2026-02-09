@@ -176,7 +176,7 @@ export function StatsPage() {
       }))
     } else {
       try {
-        const stored = JSON.parse(localStorage.getItem('grinder_sessions') || '[]') as SessionRecord[]
+        const stored = JSON.parse(localStorage.getItem('idly_sessions') || '[]') as SessionRecord[]
         const filtered = sinceMs > 0 ? stored.filter((s) => s.start_time >= sinceMs) : stored
         setSessions(filtered)
         setTotalSessions(filtered.length)

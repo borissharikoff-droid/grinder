@@ -71,11 +71,11 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
       api.db.getLocalStat('total_xp').then((v) => setTotalXP(parseInt(v || '0', 10)))
       api.db.getUnlockedAchievements().then(setUnlockedIds)
     } else {
-      setTotalXP(parseInt(localStorage.getItem('grinder_total_xp') || '0', 10))
-      setUnlockedIds(JSON.parse(localStorage.getItem('grinder_unlocked_achievements') || '[]'))
+      setTotalXP(parseInt(localStorage.getItem('idly_total_xp') || '0', 10))
+      setUnlockedIds(JSON.parse(localStorage.getItem('idly_unlocked_achievements') || '[]'))
     }
 
-    setClaimedIds(JSON.parse(localStorage.getItem('grinder_claimed_achievements') || '[]'))
+    setClaimedIds(JSON.parse(localStorage.getItem('idly_claimed_achievements') || '[]'))
 
     // Persona
     if (api?.db?.getCategoryStats) {
@@ -134,7 +134,7 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
     playClickSound()
     const updated = [...claimedIds, def.id]
     setClaimedIds(updated)
-    localStorage.setItem('grinder_claimed_achievements', JSON.stringify(updated))
+    localStorage.setItem('idly_claimed_achievements', JSON.stringify(updated))
     pushAlert(def)
   }
 

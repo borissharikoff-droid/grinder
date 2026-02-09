@@ -52,7 +52,7 @@ export function saveSessionBrowser(
   endTime: number,
   elapsedSeconds: number,
 ): void {
-  const existing = JSON.parse(localStorage.getItem('grinder_sessions') || '[]')
+  const existing = JSON.parse(localStorage.getItem('idly_sessions') || '[]')
   existing.unshift({
     id: sessionId,
     start_time: sessionStartTime,
@@ -60,8 +60,8 @@ export function saveSessionBrowser(
     duration_seconds: elapsedSeconds,
     summary: null,
   })
-  localStorage.setItem('grinder_sessions', JSON.stringify(existing.slice(0, 100)))
-  const browserActivities = JSON.parse(localStorage.getItem('grinder_activities') || '{}')
+  localStorage.setItem('idly_sessions', JSON.stringify(existing.slice(0, 100)))
+  const browserActivities = JSON.parse(localStorage.getItem('idly_activities') || '{}')
   browserActivities[sessionId] = [{
     app_name: 'Browser Session',
     window_title: 'Idly Web Mode',
@@ -69,5 +69,5 @@ export function saveSessionBrowser(
     start_time: sessionStartTime,
     end_time: endTime,
   }]
-  localStorage.setItem('grinder_activities', JSON.stringify(browserActivities))
+  localStorage.setItem('idly_activities', JSON.stringify(browserActivities))
 }

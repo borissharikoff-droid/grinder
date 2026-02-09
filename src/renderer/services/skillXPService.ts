@@ -45,7 +45,7 @@ export function computeAndSaveSkillXPBrowser(
 ): SkillXPGain[] {
   const segs: SegmentForXP[] = [{ category: 'browsing', startTime: sessionStartTime, endTime }]
   const gainsMap = computeSessionSkillXP(segs)
-  const stored = JSON.parse(localStorage.getItem('grinder_skill_xp') || '{}') as Record<string, number>
+  const stored = JSON.parse(localStorage.getItem('idly_skill_xp') || '{}') as Record<string, number>
   const gains: SkillXPGain[] = []
 
   for (const [skillId, xp] of Object.entries(gainsMap)) {
@@ -56,6 +56,6 @@ export function computeAndSaveSkillXPBrowser(
     gains.push({ skillId, xp, levelBefore, levelAfter: skillLevelFromXP(stored[skillId]) })
   }
 
-  localStorage.setItem('grinder_skill_xp', JSON.stringify(stored))
+  localStorage.setItem('idly_skill_xp', JSON.stringify(stored))
   return gains
 }

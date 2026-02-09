@@ -9,9 +9,9 @@ function loadSettings() {
   if (settingsLoaded) return
   settingsLoaded = true
   try {
-    const v = localStorage.getItem('grinder_sound_volume')
+    const v = localStorage.getItem('idly_sound_volume')
     if (v !== null) cachedVolume = parseFloat(v)
-    cachedMuted = localStorage.getItem('grinder_sound_muted') === 'true'
+    cachedMuted = localStorage.getItem('idly_sound_muted') === 'true'
   } catch { /* ignore */ }
 }
 
@@ -151,12 +151,12 @@ export function playResumeSound() {
 
 export function setSoundVolume(volume: number) {
   cachedVolume = Math.max(0, Math.min(1, volume))
-  localStorage.setItem('grinder_sound_volume', String(cachedVolume))
+  localStorage.setItem('idly_sound_volume', String(cachedVolume))
 }
 
 export function setSoundMuted(muted: boolean) {
   cachedMuted = muted
-  localStorage.setItem('grinder_sound_muted', String(muted))
+  localStorage.setItem('idly_sound_muted', String(muted))
 }
 
 export function getSoundSettings(): { volume: number; muted: boolean } {

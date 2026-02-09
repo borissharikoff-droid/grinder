@@ -26,12 +26,12 @@ export function AchievementsPage() {
       api.db.getLocalStat('total_xp').then((v) => setTotalXP(parseInt(v || '0', 10)))
       api.db.getUnlockedAchievements().then(setUnlockedIds)
     } else {
-      const xp = parseInt(localStorage.getItem('grinder_total_xp') || '0', 10)
+      const xp = parseInt(localStorage.getItem('idly_total_xp') || '0', 10)
       setTotalXP(xp)
-      const unlocked = JSON.parse(localStorage.getItem('grinder_unlocked_achievements') || '[]')
+      const unlocked = JSON.parse(localStorage.getItem('idly_unlocked_achievements') || '[]')
       setUnlockedIds(unlocked)
     }
-    const claimed = JSON.parse(localStorage.getItem('grinder_claimed_achievements') || '[]')
+    const claimed = JSON.parse(localStorage.getItem('idly_claimed_achievements') || '[]')
     setClaimedIds(claimed)
   }, [])
 
@@ -40,7 +40,7 @@ export function AchievementsPage() {
     // Mark as claimed
     const updated = [...claimedIds, def.id]
     setClaimedIds(updated)
-    localStorage.setItem('grinder_claimed_achievements', JSON.stringify(updated))
+    localStorage.setItem('idly_claimed_achievements', JSON.stringify(updated))
     // Show loot drop
     pushAlert(def)
   }

@@ -152,11 +152,11 @@ export function useFriends() {
       setFriends(friendList)
 
       // Check social achievements
-      const alreadyUnlocked = JSON.parse(localStorage.getItem('grinder_unlocked_achievements') || '[]') as string[]
+      const alreadyUnlocked = JSON.parse(localStorage.getItem('idly_unlocked_achievements') || '[]') as string[]
       const newSocial = checkSocialAchievements(friendList.length, alreadyUnlocked)
       if (newSocial.length > 0) {
         const updated = [...alreadyUnlocked, ...newSocial.map((s) => s.id)]
-        localStorage.setItem('grinder_unlocked_achievements', JSON.stringify(updated))
+        localStorage.setItem('idly_unlocked_achievements', JSON.stringify(updated))
         const api = window.electronAPI
         if (api?.db?.unlockAchievement) {
           for (const { id } of newSocial) {

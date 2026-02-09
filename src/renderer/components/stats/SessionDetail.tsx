@@ -128,11 +128,11 @@ export function SessionDetail({ sessionId, onBack }: SessionDetailProps) {
       api.db.getActivitiesBySessionId(sessionId).then((list) => setActivities((list as ActivityRow[]) || []))
     } else {
       try {
-        const sessions: SessionRow[] = JSON.parse(localStorage.getItem('grinder_sessions') || '[]')
+        const sessions: SessionRow[] = JSON.parse(localStorage.getItem('idly_sessions') || '[]')
         const found = sessions.find((s) => s.id === sessionId)
         if (found) setSession(found)
         else setNotFound(true)
-        const allActivities = JSON.parse(localStorage.getItem('grinder_activities') || '{}')
+        const allActivities = JSON.parse(localStorage.getItem('idly_activities') || '{}')
         setActivities(allActivities[sessionId] || [])
       } catch {
         setNotFound(true)

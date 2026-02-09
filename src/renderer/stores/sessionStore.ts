@@ -114,7 +114,7 @@ function setupAfkListener() {
   const api = typeof window !== 'undefined' ? window.electronAPI : null
   if (!api?.tracker?.onIdleChange) return
   afkUnsubscribe = api.tracker.onIdleChange((idle: boolean) => {
-    const afkEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('grinder_afk_enabled') !== 'false'
+    const afkEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('idly_afk_enabled') !== 'false'
     if (!afkEnabled) return
     const { status } = useSessionStore.getState()
     if (idle && status === 'running') {
@@ -145,7 +145,7 @@ function showAchievementAlerts(
       if (def) useAlertStore.getState().push(def)
     }
     // Native notifications
-    const notifEnabled = localStorage.getItem('grinder_notifications_enabled') !== 'false'
+    const notifEnabled = localStorage.getItem('idly_notifications_enabled') !== 'false'
     if (notifEnabled && api?.notify) {
       for (const a of newAch) {
         api.notify.show('Achievement Unlocked!', `${a.name} — ${a.description}`)
@@ -157,7 +157,7 @@ function showAchievementAlerts(
 }
 
 function sendStreakNotification(api: NonNullable<Window['electronAPI']>): void {
-  const notifEnabled = localStorage.getItem('grinder_notifications_enabled') !== 'false'
+  const notifEnabled = localStorage.getItem('idly_notifications_enabled') !== 'false'
   if (!notifEnabled || !api.db?.getStreak || !api.notify) return
   api.db.getStreak().then((streak: number) => {
     if (streak > 0 && streak % 7 === 0) {
@@ -326,7 +326,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       skillXPAtStart = Object.fromEntries((rows || []).map((r) => [r.skill_id, r.total_xp]))
     } else if (typeof localStorage !== 'undefined') {
       try {
-        const stored = JSON.parse(localStorage.getItem('grinder_skill_xp') || '{}') as Record<string, number>
+        const stored = JSON.parse(localStorage.getItem('idly_skill_xp') || '{}') as Record<string, number>
         skillXPAtStart = { ...stored }
       } catch { /* ignore */ }
     }
@@ -349,7 +349,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     if (api) {
       api.tracker.start()
       // Apply AFK threshold from settings
-      const savedAfk = localStorage.getItem('grinder_afk_timeout_min')
+      const savedAfk = localStorage.getItem('idly_afk_timeout_min')
       const afkMin = savedAfk ? parseInt(savedAfk, 10) : 3
       if (api.tracker.setAfkThreshold) {
         api.tracker.setAfkThreshold(afkMin * 60 * 1000)

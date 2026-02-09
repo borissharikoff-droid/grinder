@@ -40,7 +40,7 @@ const CATEGORIES = [
   { value: 'browsing', label: '🌐 Browsing' },
 ]
 
-const TASKS_STORAGE_KEY = 'grinder_tasks'
+const TASKS_STORAGE_KEY = 'idly_tasks'
 
 function getTasksFromStorage(): Task[] {
   try {

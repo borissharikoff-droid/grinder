@@ -20,14 +20,14 @@ export function HomePage({ onNavigateProfile }: HomePageProps) {
   const [showWelcome, setShowWelcome] = useState(false)
 
   useEffect(() => {
-    const welcomed = localStorage.getItem('grinder_welcomed')
+    const welcomed = localStorage.getItem('idly_welcomed')
     if (!welcomed) setShowWelcome(true)
   }, [])
 
   useEffect(() => {
     if (status === 'running' && showWelcome) {
       const t = setTimeout(() => {
-        localStorage.setItem('grinder_welcomed', '1')
+        localStorage.setItem('idly_welcomed', '1')
         setShowWelcome(false)
       }, 600)
       return () => clearTimeout(t)
@@ -35,7 +35,7 @@ export function HomePage({ onNavigateProfile }: HomePageProps) {
   }, [status, showWelcome])
 
   const handleDismissWelcome = () => {
-    localStorage.setItem('grinder_welcomed', '1')
+    localStorage.setItem('idly_welcomed', '1')
     setShowWelcome(false)
   }
 

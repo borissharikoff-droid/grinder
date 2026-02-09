@@ -137,7 +137,7 @@ function startWindowDetector(): void {
 
   try {
     const tmpDir = os.tmpdir()
-    detectorScriptPath = path.join(tmpDir, `grinder-window-detector-${process.pid}.ps1`)
+    detectorScriptPath = path.join(tmpDir, `idly-window-detector-${process.pid}.ps1`)
     fs.writeFileSync(detectorScriptPath, '\uFEFF' + DETECTOR_SCRIPT, { encoding: 'utf8' })
   } catch (e) {
     log.error('[tracker] Failed to write detector script', e)

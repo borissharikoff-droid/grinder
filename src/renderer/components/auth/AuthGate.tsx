@@ -94,7 +94,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             { onConflict: 'id' }
           )
         }
-        localStorage.setItem('grinder_remember_me', 'true')
+        localStorage.setItem('idly_remember_me', 'true')
       }
     } else {
       let loginEmail = loginId.trim()
@@ -125,9 +125,9 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       if (err) { setError(err.message); setBusy(false); return }
 
       if (rememberMe) {
-        localStorage.setItem('grinder_remember_me', 'true')
+        localStorage.setItem('idly_remember_me', 'true')
       } else {
-        localStorage.setItem('grinder_remember_me', 'false')
+        localStorage.setItem('idly_remember_me', 'false')
       }
     }
 

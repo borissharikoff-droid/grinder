@@ -3,7 +3,7 @@ import path from 'path'
 import { app } from 'electron'
 
 const userDataPath = app.getPath('userData')
-const dbPath = path.join(userDataPath, 'grinder.sqlite')
+const dbPath = path.join(userDataPath, 'idly.sqlite')
 
 let db: Database.Database | null = null
 

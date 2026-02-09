@@ -30,17 +30,17 @@ export function SettingsPage() {
     const sound = getSoundSettings()
     setSoundMutedState(sound.muted)
     setSoundVolumeState(sound.volume)
-    setShortcutsEnabled(localStorage.getItem('grinder_shortcuts_enabled') !== 'false')
-    setNotificationsEnabled(localStorage.getItem('grinder_notifications_enabled') !== 'false')
-    setAfkEnabled(localStorage.getItem('grinder_afk_enabled') !== 'false')
-    const savedAfk = localStorage.getItem('grinder_afk_timeout_min')
+    setShortcutsEnabled(localStorage.getItem('idly_shortcuts_enabled') !== 'false')
+    setNotificationsEnabled(localStorage.getItem('idly_notifications_enabled') !== 'false')
+    setAfkEnabled(localStorage.getItem('idly_afk_enabled') !== 'false')
+    const savedAfk = localStorage.getItem('idly_afk_timeout_min')
     if (savedAfk) setAfkTimeout(parseInt(savedAfk, 10) || 3)
 
     // Smart notification toggles
-    setNotifGrindReminder(localStorage.getItem('grinder_notif_grind_reminder') !== 'false')
-    setNotifStreakWarning(localStorage.getItem('grinder_notif_streak_warning') !== 'false')
-    setNotifDistraction(localStorage.getItem('grinder_notif_distraction') !== 'false')
-    setNotifPraise(localStorage.getItem('grinder_notif_praise') !== 'false')
+    setNotifGrindReminder(localStorage.getItem('idly_notif_grind_reminder') !== 'false')
+    setNotifStreakWarning(localStorage.getItem('idly_notif_streak_warning') !== 'false')
+    setNotifDistraction(localStorage.getItem('idly_notif_distraction') !== 'false')
+    setNotifPraise(localStorage.getItem('idly_notif_praise') !== 'false')
 
     // Check auto-launch status
     if (window.electronAPI?.settings?.getAutoLaunch) {
@@ -68,19 +68,19 @@ export function SettingsPage() {
 
   const handleShortcuts = (enabled: boolean) => {
     setShortcutsEnabled(enabled)
-    localStorage.setItem('grinder_shortcuts_enabled', String(enabled))
+    localStorage.setItem('idly_shortcuts_enabled', String(enabled))
   }
 
   const handleNotifications = (enabled: boolean) => {
     setNotificationsEnabled(enabled)
-    localStorage.setItem('grinder_notifications_enabled', String(enabled))
+    localStorage.setItem('idly_notifications_enabled', String(enabled))
     // Sync to DB so main process can read it without executeJavaScript
-    window.electronAPI?.db?.setLocalStat('grinder_notifications_enabled', String(enabled))
+    window.electronAPI?.db?.setLocalStat('idly_notifications_enabled', String(enabled))
   }
 
   const handleAfkEnabled = (enabled: boolean) => {
     setAfkEnabled(enabled)
-    localStorage.setItem('grinder_afk_enabled', String(enabled))
+    localStorage.setItem('idly_afk_enabled', String(enabled))
     if (!enabled) {
       useSessionStore.getState().resume()
       useSessionStore.setState({ isAfkPaused: false })
@@ -89,7 +89,7 @@ export function SettingsPage() {
 
   const handleAfkTimeout = (min: number) => {
     setAfkTimeout(min)
-    localStorage.setItem('grinder_afk_timeout_min', String(min))
+    localStorage.setItem('idly_afk_timeout_min', String(min))
     if (window.electronAPI?.tracker?.setAfkThreshold) {
       window.electronAPI.tracker.setAfkThreshold(min * 60 * 1000)
     }
@@ -209,25 +209,25 @@ export function SettingsPage() {
           label="Grind reminder"
           sublabel="Nudge if no session today"
           enabled={notifGrindReminder}
-          onChange={handleNotifToggle('grinder_notif_grind_reminder', setNotifGrindReminder)}
+          onChange={handleNotifToggle('idly_notif_grind_reminder', setNotifGrindReminder)}
         />
         <ToggleRow
           label="Streak warning"
           sublabel="Alert when streak is at risk"
           enabled={notifStreakWarning}
-          onChange={handleNotifToggle('grinder_notif_streak_warning', setNotifStreakWarning)}
+          onChange={handleNotifToggle('idly_notif_streak_warning', setNotifStreakWarning)}
         />
         <ToggleRow
           label="Distraction alert"
           sublabel="Nudge when too much social/games"
           enabled={notifDistraction}
-          onChange={handleNotifToggle('grinder_notif_distraction', setNotifDistraction)}
+          onChange={handleNotifToggle('idly_notif_distraction', setNotifDistraction)}
         />
         <ToggleRow
           label="Focus praise"
           sublabel="Praise for sustained focus"
           enabled={notifPraise}
-          onChange={handleNotifToggle('grinder_notif_praise', setNotifPraise)}
+          onChange={handleNotifToggle('idly_notif_praise', setNotifPraise)}
         />
       </div>
 

@@ -5,7 +5,7 @@ export function useKeyboardShortcuts() {
   const { status, start, stop, pause, resume } = useSessionStore()
 
   useEffect(() => {
-    const enabled = localStorage.getItem('grinder_shortcuts_enabled') !== 'false'
+    const enabled = localStorage.getItem('idly_shortcuts_enabled') !== 'false'
     if (!enabled) return
 
     const handler = (e: KeyboardEvent) => {
