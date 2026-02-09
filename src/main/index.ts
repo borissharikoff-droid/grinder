@@ -75,7 +75,7 @@ function createWindow() {
     maxWidth: 600,
     icon: getIconPath(),
     webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
+      preload: path.join(__dirname, '../../preload/preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -109,7 +109,7 @@ function createWindow() {
     })
     mainWindow.webContents.openDevTools()
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
+    mainWindow.loadFile(path.join(__dirname, '../../renderer/index.html'))
   }
 
   mainWindow.once('ready-to-show', () => {
