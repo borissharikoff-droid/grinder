@@ -11,12 +11,13 @@ interface ChatThreadProps {
   messages: ChatMessage[]
   loading: boolean
   sending: boolean
+  sendError?: string | null
   getConversation: (otherUserId: string) => Promise<ChatMessage[]>
   sendMessage: (receiverId: string, body: string) => Promise<void>
   markConversationRead: (otherUserId: string) => Promise<void>
 }
 
-export function ChatThread({ profile, onBack, messages, loading, sending, getConversation, sendMessage, markConversationRead }: ChatThreadProps) {
+export function ChatThread({ profile, onBack, messages, loading, sending, sendError, getConversation, sendMessage, markConversationRead }: ChatThreadProps) {
   const { user } = useAuthStore()
   const [input, setInput] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
@@ -92,6 +93,9 @@ export function ChatThread({ profile, onBack, messages, loading, sending, getCon
         )}
       </div>
 
+      {sendError && (
+        <p className="text-red-400 text-xs mb-1 px-1">{sendError}</p>
+      )}
       <div className="flex gap-2">
         <input
           type="text"

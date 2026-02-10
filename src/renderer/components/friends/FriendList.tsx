@@ -97,6 +97,9 @@ export function FriendList({ friends, onSelectFriend, onMessageFriend, unreadByF
               <div className="flex items-center gap-1.5 mb-0.5">
                 <span className="text-sm font-semibold text-white truncate">{f.username || 'Anonymous'}</span>
                 <span className="text-[10px] text-cyber-neon font-mono shrink-0" title="Total skill level">{(f.total_skill_level ?? 0)}/{MAX_TOTAL_SKILL_LEVEL}</span>
+                {f.streak_count > 0 && (
+                  <span className="text-[10px] text-orange-400 font-mono shrink-0" title="Streak">🔥{f.streak_count}d</span>
+                )}
                 {persona && (
                   <span className="text-[9px] px-1 py-0.5 rounded border border-white/10 bg-discord-darker/80 text-gray-400 shrink-0" title={persona.label}>
                     {persona.emoji}
@@ -164,9 +167,9 @@ export function FriendList({ friends, onSelectFriend, onMessageFriend, unreadByF
             </div>
             </button>
 
-            {/* Message + Streak on right */}
-            <div className="shrink-0 flex items-center gap-2">
-              {onMessageFriend && (
+            {/* Message on right */}
+            {onMessageFriend && (
+              <div className="shrink-0">
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); onMessageFriend(f) }}
@@ -182,13 +185,8 @@ export function FriendList({ friends, onSelectFriend, onMessageFriend, unreadByF
                     </span>
                   )}
                 </button>
-              )}
-              {f.streak_count > 0 && (
-                <div className="text-[10px] text-orange-400 font-mono">
-                  🔥 {f.streak_count}d
-                </div>
-              )}
-            </div>
+              </div>
+            )}
           </motion.div>
         )
       })}

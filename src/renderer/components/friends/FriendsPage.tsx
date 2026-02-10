@@ -50,6 +50,7 @@ export function FriendsPage() {
           messages={chat.messages}
           loading={chat.loading}
           sending={chat.sending}
+          sendError={chat.sendError}
           getConversation={chat.getConversation}
           sendMessage={chat.sendMessage}
           markConversationRead={chat.markConversationRead}
