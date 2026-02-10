@@ -99,17 +99,26 @@ public class WinApi {
             return null;
         }
     }
-    // --- Background music detection ---
+    // --- Background music detection via Win32 window enumeration ---
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetDesktopWindow();
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+    private const uint GW_CHILD = 5;
+    private const uint GW_HWNDNEXT = 2;
     private static readonly string[] MusicProcessNames = new string[] {
         "spotify", "wmplayer", "vkmusic", "yandexmusic", "deezer",
         "itunes", "tidal", "foobar2000", "aimp", "musicbee", "groove"
     };
-    private static readonly string[] BrowserProcessNames = new string[] {
-        "chrome", "firefox", "msedge", "brave", "opera", "vivaldi", "arc", "yandex"
-    };
     private static readonly string[] MusicTitleKeywords = new string[] {
         "youtube music", "music.youtube", "spotify", "soundcloud",
-        "deezer", "apple music", "vk music", "vkmusic", "yandex music"
+        "deezer", "apple music", "vk music", "vkmusic", "yandex music",
+        "\\u044f\\u043d\\u0434\\u0435\\u043a\\u0441 \\u043c\\u0443\\u0437\\u044b\\u043a",
+        "youtube \\u043c\\u0443\\u0437\\u044b\\u043a",
+        "music.yandex", "zvuk.com", "boom.ru"
     };
     private static bool IsMusicTitle(string title) {
         string lower = title.ToLower();
@@ -118,31 +127,34 @@ public class WinApi {
         }
         return false;
     }
+    private static bool IsMusicProcess(string processName) {
+        string pn = processName.ToLower();
+        for (int i = 0; i < MusicProcessNames.Length; i++) {
+            if (pn == MusicProcessNames[i]) return true;
+        }
+        return false;
+    }
     private static string DetectBackgroundMusic(IntPtr fgHwnd) {
         try {
-            bool foundMusic = false;
-            Process[] procs = Process.GetProcesses();
-            foreach (Process p in procs) {
-                try {
-                    if (p.MainWindowHandle == IntPtr.Zero) continue;
-                    if (p.MainWindowHandle == fgHwnd) continue;
-                    string pn = p.ProcessName.ToLower();
-                    // Known music player processes
-                    for (int i = 0; i < MusicProcessNames.Length; i++) {
-                        if (pn == MusicProcessNames[i]) { foundMusic = true; break; }
+            // Enumerate ALL visible top-level windows via Win32
+            IntPtr desktop = GetDesktopWindow();
+            IntPtr hwnd = GetWindow(desktop, GW_CHILD);
+            while (hwnd != IntPtr.Zero) {
+                if (hwnd != fgHwnd && IsWindowVisible(hwnd)) {
+                    // Check window title for music keywords
+                    string title = GetTitle(hwnd);
+                    if (title.Length > 0 && IsMusicTitle(title)) return "music";
+                    // Check process name for known music players
+                    uint wpid = 0;
+                    GetWindowThreadProcessId(hwnd, out wpid);
+                    if (wpid > 0) {
+                        string pn = GetProcessName(wpid);
+                        if (pn != null && IsMusicProcess(pn)) return "music";
                     }
-                    if (foundMusic) break;
-                    // Browser windows with music titles
-                    for (int i = 0; i < BrowserProcessNames.Length; i++) {
-                        if (pn == BrowserProcessNames[i]) {
-                            string wt = p.MainWindowTitle ?? "";
-                            if (wt.Length > 0 && IsMusicTitle(wt)) { foundMusic = true; break; }
-                        }
-                    }
-                    if (foundMusic) break;
-                } catch { }
+                }
+                hwnd = GetWindow(hwnd, GW_HWNDNEXT);
             }
-            return foundMusic ? "music" : "";
+            return "";
         } catch { return ""; }
     }
     private static int _iter = 0;
