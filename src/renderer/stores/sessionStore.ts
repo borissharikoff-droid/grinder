@@ -294,6 +294,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       if (cats.length > 0) {
         const newSessionXP = { ...sessionSkillXP }
         let newNotified = skillLevelNotified
+        // Only queue a new level-up if the modal is not already showing
+        const { pendingSkillLevelUpSkill: currentPending } = get()
         for (const cat of cats) {
           const skillId = categoryToSkillId(cat)
           newSessionXP[skillId] = (newSessionXP[skillId] ?? 0) + 1
@@ -302,8 +304,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           const currentLevel = skillLevelFromXP(currentXP)
           const notifiedLevel = newNotified[skillId] ?? skillLevelFromXP(baseXP)
           if (currentLevel > notifiedLevel) {
-            updates.pendingSkillLevelUpSkill = { skillId, level: currentLevel }
             newNotified = { ...newNotified, [skillId]: currentLevel }
+            // Only set pending if no modal is currently open
+            if (!currentPending) {
+              updates.pendingSkillLevelUpSkill = { skillId, level: currentLevel }
+            }
           }
         }
         updates.sessionSkillXP = newSessionXP
