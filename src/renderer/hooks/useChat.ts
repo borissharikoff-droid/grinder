@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../stores/authStore'
 import { useNavBadgeStore } from '../stores/navBadgeStore'
+import { useFriendToastStore } from '../stores/friendToastStore'
 import { playMessageSound } from '../lib/sounds'
 
 export interface ChatMessage {
@@ -70,6 +71,14 @@ export function useChat(peerId: string | null = null) {
           } else {
             addUnreadMessages(1)
             playMessageSound()
+            // Show toast with sender name
+            if (supabase) {
+              supabase.from('profiles').select('username').eq('id', row.sender_id).single().then(({ data: profile }) => {
+                const name = profile?.username?.trim() || 'Friend'
+                const preview = row.body.length > 30 ? row.body.slice(0, 30) + '...' : row.body
+                useFriendToastStore.getState().push({ type: 'message', friendName: name, messagePreview: preview })
+              })
+            }
           }
         }
       )

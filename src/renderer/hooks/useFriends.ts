@@ -133,7 +133,7 @@ export function useFriends() {
         }
       }
 
-      // Friend toasts: came online / started leveling (only after we have a previous snapshot)
+      // Friend toasts: came online (only after we have a previous snapshot)
       const prev = previousFriendsRef.current
       if (prev !== null) {
         const name = (f: FriendProfile) => f.username?.trim() || 'Friend'
@@ -141,15 +141,6 @@ export function useFriends() {
           const p = prev.find((x) => x.id === friend.id)
           if (!p?.is_online && friend.is_online) {
             pushFriendToast({ type: 'online', friendName: name(friend) })
-          }
-          const act = friend.current_activity ?? ''
-          const prevAct = p?.current_activity ?? ''
-          if (act.startsWith('Leveling ')) {
-            const skillPart = act.slice(9).split(' · ')[0].trim()
-            const prevSkillPart = prevAct.startsWith('Leveling ') ? prevAct.slice(9).split(' · ')[0].trim() : ''
-            if (skillPart && skillPart !== prevSkillPart) {
-              pushFriendToast({ type: 'leveling', friendName: name(friend), skillName: skillPart })
-            }
           }
         }
       }
@@ -165,13 +156,17 @@ export function useFriends() {
           .is('read_at', null)
           .in('sender_id', acceptedIds)
         const byFriend: Record<string, number> = {}
+        let totalUnread = 0
         for (const row of unreadRows || []) {
           const sid = (row as { sender_id: string }).sender_id
           byFriend[sid] = (byFriend[sid] || 0) + 1
+          totalUnread++
         }
         setUnreadByFriendId(byFriend)
+        useNavBadgeStore.getState().setUnreadMessagesCount(totalUnread)
       } else {
         setUnreadByFriendId({})
+        useNavBadgeStore.getState().setUnreadMessagesCount(0)
       }
 
       // Check social achievements
