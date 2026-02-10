@@ -40,7 +40,7 @@ export function CurrentActivity() {
   }
 
   const isDetectorError = currentActivity?.appName === 'Ошибка детектора окна'
-  const isUnknown = !currentActivity || currentActivity.appName === 'Unknown' || currentActivity.windowTitle === 'Detecting...'
+  const isUnknown = !currentActivity || currentActivity.appName === 'Unknown' || currentActivity.windowTitle === 'Searching 4 window...'
 
   const openLogs = () => api?.data?.openLogsFolder?.()
 
@@ -59,10 +59,7 @@ export function CurrentActivity() {
   if (!currentActivity || isUnknown) {
     return (
       <div className="w-full max-w-xs rounded-xl bg-discord-card/60 border border-white/5 px-4 py-3 text-center">
-        <p className="text-gray-500 text-xs font-mono">detecting window...</p>
-        <p className="text-gray-600 text-[11px] mt-1.5">Если не исчезает — проверьте логи в папке приложения.</p>
-        {logsPath && <p className="text-gray-500 text-[11px] mt-1 font-mono truncate" title={logsPath}>{logsPath}</p>}
-        {api?.data?.openLogsFolder && <button type="button" onClick={openLogs} className="mt-2 text-xs text-cyber-neon hover:underline">Открыть папку логов</button>}
+        <p className="text-gray-500 text-xs font-mono">Searching 4 window...</p>
       </div>
     )
   }

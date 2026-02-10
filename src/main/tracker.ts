@@ -30,7 +30,6 @@ try {
   Add-Type -TypeDefinition @"
 using System;
 using System.IO;
-using System.Text;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 public class WinApi {
@@ -38,10 +37,10 @@ public class WinApi {
     public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    public static extern int GetWindowTextLength(IntPtr hWnd);
+    [DllImport("user32.dll", EntryPoint = "GetWindowTextW")]
+    private static extern int _GetWindowText(IntPtr hWnd, IntPtr lpString, int nMaxCount);
+    [DllImport("user32.dll", EntryPoint = "GetWindowTextLengthW")]
+    private static extern int _GetWindowTextLength(IntPtr hWnd);
     [DllImport("user32.dll")]
     public static extern short GetAsyncKeyState(int vKey);
     [DllImport("user32.dll")]
@@ -60,11 +59,15 @@ public class WinApi {
         _stdout.Flush();
     }
     public static string GetTitle(IntPtr hWnd) {
-        int len = GetWindowTextLength(hWnd);
+        int len = _GetWindowTextLength(hWnd);
         if (len <= 0) return "";
-        StringBuilder sb = new StringBuilder(len + 1);
-        GetWindowText(hWnd, sb, sb.Capacity);
-        return sb.ToString();
+        IntPtr buf = Marshal.AllocHGlobal((len + 1) * 2);
+        try {
+            _GetWindowText(hWnd, buf, len + 1);
+            return Marshal.PtrToStringUni(buf) ?? "";
+        } finally {
+            Marshal.FreeHGlobal(buf);
+        }
     }
     public static int CountKeyPresses() {
         int count = 0;
@@ -97,9 +100,7 @@ public class WinApi {
   [Console]::Out.Flush()
   exit 1
 }
-$dbgIter = 0
 while ($true) {
-    $dbgIter++
     try {
         $keys = 0
         try { $keys = [WinApi]::CountKeyPresses() } catch { }
@@ -125,9 +126,6 @@ while ($true) {
                     if ($cim -and $cim.Name) { $pname = [System.IO.Path]::GetFileNameWithoutExtension($cim.Name) }
                 } catch { }
             }
-        }
-        if ($dbgIter -le 5) {
-            [WinApi]::WriteUtf8Line("DBG:iter=" + $dbgIter + " hwnd=" + $hwnd.ToInt64() + " pid=" + $pid2 + " pname=" + $pname + " title=" + $title)
         }
         if ($pname -eq 'explorer' -and [string]::IsNullOrWhiteSpace($title)) {
             [WinApi]::WriteUtf8Line("WIN:Idle||" + $keys + "|" + $idleMs)
@@ -564,7 +562,7 @@ function poll(): void {
       currentSegmentActivity = lastActivity
     }
   } else {
-    lastActivity = { appName: 'Unknown', windowTitle: 'Detecting...', category: 'other', timestamp: now, keystrokes: totalSessionKeystrokes }
+    lastActivity = { appName: 'Unknown', windowTitle: 'Searching 4 window...', category: 'other', timestamp: now, keystrokes: totalSessionKeystrokes }
     currentSegmentCategories = ['other']
     listeners.forEach((cb) => cb(lastActivity!))
   }
