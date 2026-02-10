@@ -16,7 +16,7 @@ interface HomePageProps {
 }
 
 export function HomePage({ onNavigateProfile }: HomePageProps) {
-  const { showComplete, setCurrentActivity, status } = useSessionStore()
+  const { showComplete, status } = useSessionStore()
   const [showWelcome, setShowWelcome] = useState(false)
 
   useEffect(() => {
@@ -38,18 +38,6 @@ export function HomePage({ onNavigateProfile }: HomePageProps) {
     localStorage.setItem('idly_welcomed', '1')
     setShowWelcome(false)
   }
-
-  useEffect(() => {
-    const api = typeof window !== 'undefined' ? window.electronAPI : null
-    if (!api?.tracker?.onActivityUpdate) return
-    const unsub = api.tracker.onActivityUpdate((a) => {
-      setCurrentActivity(a as Parameters<typeof setCurrentActivity>[0])
-    })
-    api.tracker.getCurrentActivity?.().then((a) => {
-      if (a) setCurrentActivity(a as Parameters<typeof setCurrentActivity>[0])
-    }).catch(() => {})
-    return unsub
-  }, [setCurrentActivity])
 
   return (
     <div className="flex flex-col h-full">

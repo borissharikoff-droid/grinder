@@ -91,6 +91,20 @@ export default function App() {
 
   const handleNavigateProfile = useCallback(() => setActiveTab('profile'), [])
 
+  // Activity update listener — must live at App level so it works on ALL tabs
+  const setCurrentActivity = useSessionStore((s) => s.setCurrentActivity)
+  useEffect(() => {
+    const api = typeof window !== 'undefined' ? window.electronAPI : null
+    if (!api?.tracker?.onActivityUpdate) return
+    const unsub = api.tracker.onActivityUpdate((a) => {
+      setCurrentActivity(a as Parameters<typeof setCurrentActivity>[0])
+    })
+    api.tracker.getCurrentActivity?.().then((a) => {
+      if (a) setCurrentActivity(a as Parameters<typeof setCurrentActivity>[0])
+    }).catch(() => {})
+    return unsub
+  }, [setCurrentActivity])
+
   useEffect(() => {
     useSessionStore.getState().setGrindPageActive(activeTab === 'home')
   }, [activeTab])
