@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useFriends } from '../../hooks/useFriends'
 import { useChat } from '../../hooks/useChat'
 import { FriendList } from './FriendList'
@@ -22,6 +22,12 @@ export function FriendsPage() {
   const [showLeaderboard, setShowLeaderboard] = useState(false)
   const peerId = view === 'chat' && selected ? selected.id : null
   const chat = useChat(peerId)
+
+  // Wrap markConversationRead to also refresh friend unread badges
+  const markConversationReadAndRefresh = useCallback(async (otherUserId: string) => {
+    await chat.markConversationRead(otherUserId)
+    refresh()
+  }, [chat.markConversationRead, refresh])
 
   const incomingCount = pendingRequests.filter((r) => r.direction === 'incoming').length
 
@@ -53,7 +59,7 @@ export function FriendsPage() {
           sendError={chat.sendError}
           getConversation={chat.getConversation}
           sendMessage={chat.sendMessage}
-          markConversationRead={chat.markConversationRead}
+          markConversationRead={markConversationReadAndRefresh}
         />
       ) : view === 'profile' && selected ? (
         <FriendProfile

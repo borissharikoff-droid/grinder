@@ -27,6 +27,13 @@ export function ChatThread({ profile, onBack, messages, loading, sending, sendEr
     markConversationRead(profile.id)
   }, [profile.id, getConversation, markConversationRead])
 
+  // Mark new messages as read when they arrive while chat is open
+  useEffect(() => {
+    if (messages.length > 0) {
+      markConversationRead(profile.id)
+    }
+  }, [messages.length, profile.id, markConversationRead])
+
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages])
