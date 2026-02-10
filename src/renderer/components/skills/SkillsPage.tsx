@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { SKILLS, skillLevelFromXP, skillXPProgress, formatSkillTime, categoryToSkillId } from '../../lib/skills'
 import { useSessionStore } from '../../stores/sessionStore'
@@ -20,6 +20,8 @@ export function SkillsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const { status, currentActivity, sessionSkillXP } = useSessionStore()
   const levelingSkillId = status === 'running' && currentActivity ? categoryToSkillId(currentActivity.category) : null
+  const hasMountedRef = useRef(false)
+  useEffect(() => { hasMountedRef.current = true }, [])
 
   const liveById = useMemo(() => {
     const base = new Map(skillData.map((r) => [r.skill_id, r.total_xp]))
@@ -102,10 +104,9 @@ export function SkillsPage() {
           <div className="mb-4">
             <motion.div
               key={skill.id}
-              initial={{ opacity: 0, y: 10 }}
+              initial={hasMountedRef.current ? false : { opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-              layout
             >
               <button
                 type="button"
@@ -126,22 +127,17 @@ export function SkillsPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-[13px] font-semibold text-white truncate">{skill.name}</span>
-                      <motion.span
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
+                      <span
                         className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider shrink-0"
                         style={{ backgroundColor: `${skill.color}25`, color: skill.color, border: `1px solid ${skill.color}40` }}
                       >
                         active
-                      </motion.span>
+                      </span>
                     </div>
                     <div className="h-1.5 rounded-full bg-white/[0.04] overflow-hidden">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${pct}%` }}
-                        transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-                        className="h-full rounded-full"
-                        style={{ backgroundColor: skill.color }}
+                      <div
+                        className="h-full rounded-full transition-all duration-700 ease-out"
+                        style={{ backgroundColor: skill.color, width: `${pct}%` }}
                       />
                     </div>
                     <div className="flex items-center justify-between mt-1">
@@ -220,10 +216,9 @@ export function SkillsPage() {
           return (
             <motion.div
               key={skill.id}
-              initial={{ opacity: 0, y: 10 }}
+              initial={hasMountedRef.current ? false : { opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: Math.min(i * 0.04, 0.2), duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-              layout
+              transition={{ delay: hasMountedRef.current ? 0 : Math.min(i * 0.04, 0.2), duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
             >
               <button
                 type="button"
@@ -254,24 +249,19 @@ export function SkillsPage() {
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-[13px] font-semibold text-white truncate">{skill.name}</span>
                       {isLeveling && (
-                        <motion.span
-                          initial={{ opacity: 0, scale: 0.8 }}
-                          animate={{ opacity: 1, scale: 1 }}
+                        <span
                           className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider shrink-0"
                           style={{ backgroundColor: `${skill.color}25`, color: skill.color, border: `1px solid ${skill.color}40` }}
                         >
                           active
-                        </motion.span>
+                        </span>
                       )}
                     </div>
                     {/* XP bar */}
                     <div className="h-1.5 rounded-full bg-white/[0.04] overflow-hidden">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${pct}%` }}
-                        transition={{ duration: 0.8, delay: i * 0.05, ease: [0.22, 1, 0.36, 1] }}
-                        className="h-full rounded-full"
-                        style={{ backgroundColor: skill.color }}
+                      <div
+                        className="h-full rounded-full transition-all duration-700 ease-out"
+                        style={{ backgroundColor: skill.color, width: `${pct}%` }}
                       />
                     </div>
                     <div className="flex items-center justify-between mt-1">
