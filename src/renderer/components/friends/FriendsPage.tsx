@@ -95,7 +95,16 @@ export function FriendsPage() {
           )}
 
           {showLeaderboard ? (
-            <Leaderboard />
+            <div className="space-y-3">
+              <button
+                onClick={() => setShowLeaderboard(false)}
+                className="flex items-center gap-1.5 text-gray-400 hover:text-white transition-colors text-sm"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+                <span className="font-mono text-xs">Back</span>
+              </button>
+              <Leaderboard />
+            </div>
           ) : (
             <>
               {error && (

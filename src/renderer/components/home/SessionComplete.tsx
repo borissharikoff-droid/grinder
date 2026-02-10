@@ -1,21 +1,25 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { useSessionStore } from '../../stores/sessionStore'
+import { useAlertStore } from '../../stores/alertStore'
 import { ConfettiEffect } from '../animations/ConfettiEffect'
 import { playClickSound } from '../../lib/sounds'
 import { getSkillById } from '../../lib/skills'
 
-const AUTO_DISMISS_MS = 8000
+const AUTO_DISMISS_MS = 12000
 
 export function SessionComplete() {
   const { lastSessionSummary, skillXPGains, streakMultiplier, sessionXPEarned, sessionRewards, liveXP, dismissComplete } = useSessionStore()
+  const hasLootOpen = useAlertStore((s) => s.currentAlert !== null)
   const [progress, setProgress] = useState(100)
+  const elapsedRef = useRef(0)
 
+  // Pause auto-dismiss while loot drop is open
   useEffect(() => {
-    const start = Date.now()
     const interval = setInterval(() => {
-      const elapsed = Date.now() - start
-      const remaining = Math.max(0, 100 - (elapsed / AUTO_DISMISS_MS) * 100)
+      if (hasLootOpen) return // pause timer while claiming rewards
+      elapsedRef.current += 50
+      const remaining = Math.max(0, 100 - (elapsedRef.current / AUTO_DISMISS_MS) * 100)
       setProgress(remaining)
       if (remaining <= 0) {
         clearInterval(interval)
@@ -23,7 +27,7 @@ export function SessionComplete() {
       }
     }, 50)
     return () => clearInterval(interval)
-  }, [dismissComplete])
+  }, [dismissComplete, hasLootOpen])
 
   const handleDismiss = () => {
     playClickSound()

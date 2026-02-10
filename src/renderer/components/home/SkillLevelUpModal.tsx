@@ -8,7 +8,7 @@ import { PixelConfetti } from './PixelConfetti'
 import { useEffect } from 'react'
 
 export function SkillLevelUpModal() {
-  const { pendingSkillLevelUpSkill, dismissSkillLevelUp } = useSessionStore()
+  const { pendingSkillLevelUpSkill, dismissSkillLevelUp, currentActivity } = useSessionStore()
 
   useEffect(() => {
     if (pendingSkillLevelUpSkill) {
@@ -24,6 +24,7 @@ export function SkillLevelUpModal() {
 
   const quote = getSkillQuote(skillId)
   const milestoneLoot = getSkillMilestoneReward(skillId, level)
+  const appName = currentActivity?.appName || null
 
   const handleContinue = () => {
     playClickSound()
@@ -59,9 +60,12 @@ export function SkillLevelUpModal() {
               {skill.icon}
             </div>
             <p className="text-white font-semibold text-sm mb-0.5">{skill.name}</p>
-            <p className="text-2xl font-black font-mono mb-2" style={{ color: skill.color }}>
+            <p className="text-2xl font-black font-mono mb-1" style={{ color: skill.color }}>
               Lv.{level}
             </p>
+            {appName && appName !== 'Idly' && (
+              <p className="text-[10px] text-gray-500 font-mono mb-2">via {appName}</p>
+            )}
             <p className="text-gray-300 text-xs italic mb-3">&ldquo;{quote}&rdquo;</p>
             {milestoneLoot && (
               <p className="text-[10px] text-gray-400 font-mono uppercase tracking-wider mb-2 px-2 py-1.5 rounded-lg bg-white/5 border border-white/10">

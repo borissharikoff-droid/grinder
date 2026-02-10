@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { supabase } from '../../lib/supabase'
 import type { FriendProfile as FriendProfileType } from '../../hooks/useFriends'
 import { FRAMES, BADGES } from '../../lib/cosmetics'
-import { getSkillById, getSkillByName } from '../../lib/skills'
+import { getSkillById, getSkillByName, SKILLS } from '../../lib/skills'
 import { getPersonaById } from '../../lib/persona'
 import { ACHIEVEMENTS } from '../../lib/xp'
 
@@ -20,9 +20,16 @@ interface SessionSummary {
   start_time: string
 }
 
+interface FriendSkillRow {
+  skill_id: string
+  level: number
+  total_xp: number
+}
+
 export function FriendProfile({ profile, onBack, onCompare, onMessage }: FriendProfileProps) {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [achievements, setAchievements] = useState<string[]>([])
+  const [allSkills, setAllSkills] = useState<FriendSkillRow[]>([])
 
   useEffect(() => {
     if (!supabase) return
@@ -38,6 +45,11 @@ export function FriendProfile({ profile, onBack, onCompare, onMessage }: FriendP
       .select('achievement_id')
       .eq('user_id', profile.id)
       .then(({ data }) => setAchievements((data || []).map((r) => (r as { achievement_id: string }).achievement_id)))
+    supabase
+      .from('user_skills')
+      .select('skill_id, level, total_xp')
+      .eq('user_id', profile.id)
+      .then(({ data }) => setAllSkills((data as FriendSkillRow[]) || []))
   }, [profile.id])
 
   const formatDuration = (s: number) => {
@@ -202,55 +214,56 @@ export function FriendProfile({ profile, onBack, onCompare, onMessage }: FriendP
         </div>
       </div>
 
-      {/* Skills */}
-      {profile.top_skills && profile.top_skills.length > 0 && (
-        <div className="rounded-xl bg-discord-card/80 border border-white/10 p-4 space-y-2.5">
-          <p className="text-[10px] uppercase tracking-wider text-gray-500 font-mono">Skills</p>
-          {profile.top_skills.map((s) => {
-            const skill = getSkillById(s.skill_id)
-            if (!skill) return null
-            const isActive = levelingSkill === skill.name
+      {/* All Skills */}
+      <div className="rounded-xl bg-discord-card/80 border border-white/10 p-4 space-y-2.5">
+        <p className="text-[10px] uppercase tracking-wider text-gray-500 font-mono">Skills</p>
+        {(() => {
+          const skillMap = new Map(allSkills.map((s) => [s.skill_id, s]))
+          return SKILLS.map((skillDef) => {
+            const data = skillMap.get(skillDef.id)
+            const level = data?.level ?? 1
+            const isActive = levelingSkill === skillDef.name
             return (
               <div
-                key={s.skill_id}
+                key={skillDef.id}
                 className={`flex items-center gap-3 p-2 rounded-lg transition-colors ${
                   isActive ? 'bg-cyber-neon/5 border border-cyber-neon/20' : ''
                 }`}
               >
                 <div
                   className="w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0"
-                  style={{ backgroundColor: `${skill.color}15`, border: `1px solid ${skill.color}30` }}
+                  style={{ backgroundColor: `${skillDef.color}15`, border: `1px solid ${skillDef.color}30` }}
                 >
-                  {skill.icon}
+                  {skillDef.icon}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-[12px] font-semibold text-white">{skill.name}</span>
+                    <span className="text-[12px] font-semibold text-white">{skillDef.name}</span>
                     {isActive && (
                       <span
                         className="text-[8px] font-mono font-bold px-1 py-0.5 rounded uppercase"
-                        style={{ backgroundColor: `${skill.color}20`, color: skill.color }}
+                        style={{ backgroundColor: `${skillDef.color}20`, color: skillDef.color }}
                       >
                         active
                       </span>
                     )}
                   </div>
                   <div className="h-1 rounded-full bg-white/[0.04] overflow-hidden">
-                    <div className="h-full rounded-full" style={{ backgroundColor: skill.color, width: `${Math.min(100, (s.level / 99) * 100)}%` }} />
+                    <div className="h-full rounded-full" style={{ backgroundColor: skillDef.color, width: `${Math.min(100, (level / 99) * 100)}%` }} />
                   </div>
                 </div>
                 <div
                   className="w-9 h-9 rounded-lg flex flex-col items-center justify-center shrink-0"
-                  style={{ backgroundColor: `${skill.color}10`, border: `1px solid ${skill.color}20` }}
+                  style={{ backgroundColor: `${skillDef.color}10`, border: `1px solid ${skillDef.color}20` }}
                 >
                   <span className="text-[8px] text-gray-500 font-mono leading-none">LV</span>
-                  <span className="text-sm font-mono font-bold leading-tight" style={{ color: skill.color }}>{s.level}</span>
+                  <span className="text-sm font-mono font-bold leading-tight" style={{ color: skillDef.color }}>{level}</span>
                 </div>
               </div>
             )
-          })}
-        </div>
-      )}
+          })
+        })()}
+      </div>
 
       {/* Achievements */}
       <div className="rounded-xl bg-discord-card/80 border border-white/10 p-4 space-y-2">
