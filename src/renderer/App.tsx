@@ -22,9 +22,6 @@ import { warmUpAudio } from './lib/sounds'
 
 export type TabId = 'home' | 'skills' | 'stats' | 'profile' | 'friends' | 'settings'
 
-// Module-level flag — survives ALL React remounts, only resets on full app restart
-let _streakDoneThisSession = false
-
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('home')
   const [showStreak, setShowStreak] = useState(false)
@@ -57,28 +54,22 @@ export default function App() {
 
   // Check streak once on app startup
   useEffect(() => {
-    if (_streakDoneThisSession) return
-    _streakDoneThisSession = true
+    if (useSessionStore.getState().isStreakDone()) return
+    useSessionStore.getState().markStreakDone()
 
     const checkStreak = async () => {
       const api = window.electronAPI
       if (!api?.db?.getStreak || !api?.db?.getLocalStat || !api?.db?.setLocalStat) return
 
       const today = new Date().toLocaleDateString('sv-SE')
-      const browserStoredDate = localStorage.getItem('streak_shown_date')
-      if (browserStoredDate === today) return
 
       try {
         const savedDate = await api.db.getLocalStat('streak_shown_date')
-        if (savedDate === today) {
-          localStorage.setItem('streak_shown_date', today)
-          return
-        }
+        if (savedDate === today) return
 
         const streak = await api.db.getStreak()
         if (streak >= 2) {
           await api.db.setLocalStat('streak_shown_date', today)
-          localStorage.setItem('streak_shown_date', today)
           setStreakCount(streak)
           setShowStreak(true)
         }

@@ -5,7 +5,7 @@ import { computeAndSaveSkillXPElectron, computeAndSaveSkillXPBrowser } from '../
 import { processAchievementsElectron } from '../services/achievementService'
 import { syncSkillsToSupabase, syncSessionToSupabase } from '../services/supabaseSync'
 import { useAlertStore } from './alertStore'
-import { getAchievementById, levelFromTotalXP, getRewardsInRange, LevelReward } from '../lib/xp'
+import { getAchievementById, levelFromTotalXP, getRewardsInRange, LevelReward, CATEGORY_XP_MULTIPLIER } from '../lib/xp'
 import { categoryToSkillId, skillLevelFromXP } from '../lib/skills'
 
 type SessionStatus = 'idle' | 'running' | 'paused'
@@ -73,6 +73,10 @@ interface SessionStore {
   dismissComplete: () => void
   dismissLevelUp: () => void
   checkStreakOnMount: () => Promise<number>
+  /** Returns true if streak was already shown this session (module-level flag) */
+  isStreakDone: () => boolean
+  /** Marks streak as shown for this session */
+  markStreakDone: () => void
   /** True when user is on home (grind) tab — live XP only ticks and shows popups there */
   isGrindPageActive: boolean
   setGrindPageActive: (v: boolean) => void
@@ -82,6 +86,8 @@ let tickInterval: ReturnType<typeof setInterval> | null = null
 let xpTickInterval: ReturnType<typeof setInterval> | null = null
 let checkpointInterval: ReturnType<typeof setInterval> | null = null
 let pausedAccumulated = 0 // ms accumulated while paused
+/** Module-level flag — survives React remounts, only resets on full app restart */
+let _streakDoneThisSession = false
 let pauseStartedAt = 0    // timestamp when current pause started
 let lastXpTickTime = 0    // timestamp of last XP tick
 
@@ -169,20 +175,6 @@ function sendStreakNotification(api: NonNullable<Window['electronAPI']>): void {
 }
 
 // ── Real-Time XP Tick Constants ──
-// XP per minute by category (same as computeSessionXP but for ticks). Only selected app windows give XP.
-const CATEGORY_XP_RATE: Record<string, number> = {
-  coding: 2,
-  design: 1.5,
-  creative: 1.2,
-  learning: 1.2,
-  music: 0.5,
-  games: 0.3,
-  social: 0.5,
-  browsing: 0.8,
-  other: 0.5,
-  idle: 0, // desktop/unknown — no XP
-}
-
 const XP_TICK_INTERVAL_MS = 30_000 // 30 seconds
 
 // ── XP Tick Functions ──
@@ -208,7 +200,7 @@ function startXpTicking() {
     // Sum XP rates across all active categories
     let totalRate = 0
     for (const cat of cats) {
-      totalRate += CATEGORY_XP_RATE[cat] ?? 0.5
+      totalRate += CATEGORY_XP_MULTIPLIER[cat] ?? 0.5
     }
     const xpEarned = Math.round((tickDurationMs / 60_000) * totalRate)
 
@@ -322,6 +314,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   async start() {
+    // Clear any stale intervals from a previous session that wasn't cleanly stopped
+    if (tickInterval) { clearInterval(tickInterval); tickInterval = null }
+    stopXpTicking()
+    stopCheckpointSaving()
+
     const sessionId = crypto.randomUUID()
     const sessionStartTime = Date.now()
     pausedAccumulated = 0
@@ -485,6 +482,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       window.electronAPI.tracker.resume()
     }
     playResumeSound()
+    if (tickInterval) { clearInterval(tickInterval); tickInterval = null }
     tickInterval = setInterval(() => get().tick(), 1000)
     startXpTicking()
   },
@@ -519,6 +517,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       return streak ?? 0
     }
     return 0
+  },
+
+  isStreakDone() {
+    return _streakDoneThisSession
+  },
+
+  markStreakDone() {
+    _streakDoneThisSession = true
   },
 }))
 

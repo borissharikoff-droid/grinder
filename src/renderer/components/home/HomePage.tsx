@@ -14,9 +14,32 @@ interface HomePageProps {
   onNavigateProfile: () => void
 }
 
+function formatRecoveryDuration(secs: number): string {
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  return h > 0 ? `${h}h ${m}m` : `${m}m`
+}
+
 export function HomePage({ onNavigateProfile }: HomePageProps) {
   const { showComplete, status } = useSessionStore()
   const [showWelcome, setShowWelcome] = useState(false)
+  const [checkpoint, setCheckpoint] = useState<{ elapsed_seconds: number; updated_at: number } | null>(null)
+
+  // Check for crash recovery checkpoint on mount
+  useEffect(() => {
+    const api = window.electronAPI
+    if (!api?.db?.getCheckpoint) return
+    api.db.getCheckpoint().then((cp) => {
+      if (cp && cp.elapsed_seconds >= 60) {
+        setCheckpoint({ elapsed_seconds: cp.elapsed_seconds, updated_at: cp.updated_at })
+      }
+    }).catch(() => {})
+  }, [])
+
+  const dismissCheckpoint = () => {
+    setCheckpoint(null)
+    window.electronAPI?.db?.clearCheckpoint?.().catch(() => {})
+  }
 
   useEffect(() => {
     const welcomed = localStorage.getItem('idly_welcomed')
@@ -43,6 +66,27 @@ export function HomePage({ onNavigateProfile }: HomePageProps) {
       <ProfileBar onNavigateProfile={onNavigateProfile} />
 
       <div className="flex-1 flex flex-col items-center justify-center pb-4 px-4 gap-6">
+        {/* Crash recovery banner */}
+        {checkpoint && status === 'idle' && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="w-full max-w-xs rounded-xl bg-discord-card border border-orange-500/30 p-3 text-center"
+          >
+            <p className="text-xs text-orange-400 font-medium mb-1">
+              Previous session interrupted ({formatRecoveryDuration(checkpoint.elapsed_seconds)})
+            </p>
+            <div className="flex justify-center gap-2">
+              <button
+                onClick={dismissCheckpoint}
+                className="text-[10px] px-3 py-1 rounded-lg bg-white/5 text-gray-400 hover:text-white transition-colors"
+              >
+                Dismiss
+              </button>
+            </div>
+          </motion.div>
+        )}
+
         {showWelcome && status === 'idle' ? (
           <WelcomeBanner onDismiss={handleDismissWelcome} />
         ) : (

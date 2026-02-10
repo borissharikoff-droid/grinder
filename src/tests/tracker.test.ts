@@ -1,28 +1,9 @@
 import { describe, it, expect } from 'vitest'
+import { categorizeMultiple } from '../main/tracker'
 
-// We need to test the categorize function which is not exported,
-// so we import the module-level types and test via the exported interface.
-// Since categorize is a private function in tracker.ts, we'll extract
-// the categorization logic into a testable form.
-
-// For now, test the getAppDisplayName and categorize logic by extracting patterns.
-
-type ActivityCategory = 'coding' | 'design' | 'games' | 'social' | 'browsing' | 'creative' | 'learning' | 'music' | 'other'
-
-// Re-implement categorize for testing (mirrors tracker.ts logic exactly)
-function categorize(appName: string, windowTitle: string): ActivityCategory {
-  const lowerApp = appName.toLowerCase()
-  const lowerTitle = windowTitle.toLowerCase()
-  if (/^(code|cursor|intellij|webstorm|pycharm|idea|devenv|rider)$/i.test(lowerApp) || /visual studio/i.test(lowerApp)) return 'coding'
-  if (/\.(tsx?|jsx?|py|rs|go|cpp|cs|java)\b/i.test(lowerTitle)) return 'coding'
-  if (/^(figma|photoshop|sketch|canva|illustrator|xd|invision|zeplin|affinity|gimp|krita)$/i.test(lowerApp) || /figma|design|mockup/i.test(lowerTitle)) return 'design'
-  if (/^(ableton|fl studio|reaper|logic|audacity|premiere|davinci|resolve|obs|blender|afterfx|vegas|cinema4d)$/i.test(lowerApp) || /premiere|davinci|blender|after effects/i.test(lowerTitle)) return 'creative'
-  if (/^(notion|obsidian|anki|sumatrapdf|acrobat|acrord32|foxit|foxitreader|kindle|evernote|onenote)$/i.test(lowerApp) || /\.pdf\b|notion|obsidian|anki/i.test(lowerTitle)) return 'learning'
-  if (/^(spotify|music|soundcloud|itunes|tidal|yandexmusic)$/i.test(lowerApp) || /youtube.*music|spotify|soundcloud/i.test(lowerTitle)) return 'music'
-  if (/^(steam|epicgameslauncher|valorant|leagueclient|dota2|minecraft|fortniteclient|gta|csgo|cs2|overwatch|battle\.net|javaw)$/i.test(lowerApp) || /game|play|steam/i.test(lowerTitle)) return 'games'
-  if (/^(telegram|discord|slack|whatsapp|teams)$/i.test(lowerApp)) return 'social'
-  if (/^(chrome|firefox|msedge|brave|opera|vivaldi|arc|yandex)$/i.test(lowerApp)) return 'browsing'
-  return 'other'
+/** Helper: get first (primary) category from categorizeMultiple */
+function categorize(appName: string, windowTitle: string): string {
+  return categorizeMultiple(appName, windowTitle)[0]
 }
 
 describe('categorize', () => {
@@ -131,5 +112,23 @@ describe('categorize', () => {
 
   it('categorizes explorer as other (not browsing)', () => {
     expect(categorize('explorer', '')).toBe('other')
+  })
+})
+
+describe('categorizeMultiple', () => {
+  it('returns multiple categories for music in browser', () => {
+    const cats = categorizeMultiple('chrome', 'Spotify - Web Player')
+    expect(cats).toContain('music')
+  })
+
+  it('returns music + learning for podcast on music site', () => {
+    const cats = categorizeMultiple('chrome', 'подкаст - Spotify')
+    expect(cats).toContain('music')
+    expect(cats).toContain('learning')
+  })
+
+  it('strips .exe suffix from app name', () => {
+    expect(categorize('Code.exe', '')).toBe('coding')
+    expect(categorize('Discord.exe', '')).toBe('social')
   })
 })

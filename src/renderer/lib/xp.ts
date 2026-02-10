@@ -94,7 +94,7 @@ export function getStreakMultiplier(streak: number): number {
   return 1.0
 }
 
-const CATEGORY_XP_MULTIPLIER: Record<string, number> = {
+export const CATEGORY_XP_MULTIPLIER: Record<string, number> = {
   coding: 2,
   design: 1.5,
   creative: 1.2,

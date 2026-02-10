@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import path from 'path'
 import { app } from 'electron'
+import { runMigrations } from './migrations'
 
 const userDataPath = app.getPath('userData')
 const dbPath = path.join(userDataPath, 'idly.sqlite')
@@ -10,86 +11,8 @@ let db: Database.Database | null = null
 function getDb(): Database.Database {
   if (!db) {
     db = new Database(dbPath)
-    // Enable foreign key enforcement
     db.pragma('foreign_keys = ON')
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS sessions (
-        id TEXT PRIMARY KEY,
-        start_time INTEGER NOT NULL,
-        end_time INTEGER NOT NULL,
-        duration_seconds INTEGER NOT NULL,
-        summary TEXT
-      );
-      CREATE TABLE IF NOT EXISTS activities (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id TEXT NOT NULL,
-        app_name TEXT,
-        window_title TEXT,
-        category TEXT,
-        start_time INTEGER NOT NULL,
-        end_time INTEGER NOT NULL,
-        keystrokes INTEGER NOT NULL DEFAULT 0,
-        FOREIGN KEY (session_id) REFERENCES sessions(id)
-      );
-      CREATE INDEX IF NOT EXISTS idx_activities_session ON activities(session_id);
-      CREATE INDEX IF NOT EXISTS idx_sessions_start ON sessions(start_time);
-      CREATE TABLE IF NOT EXISTS session_analysis (
-        session_id TEXT PRIMARY KEY,
-        analysis_text TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        FOREIGN KEY (session_id) REFERENCES sessions(id)
-      );
-      CREATE TABLE IF NOT EXISTS local_stats (
-        key TEXT PRIMARY KEY,
-        value TEXT
-      );
-      CREATE TABLE IF NOT EXISTS achievements_unlocked (
-        achievement_id TEXT PRIMARY KEY,
-        unlocked_at INTEGER NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS skill_xp (
-        skill_id TEXT PRIMARY KEY,
-        total_xp INTEGER NOT NULL DEFAULT 0,
-        updated_at INTEGER NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS goals (
-        id TEXT PRIMARY KEY,
-        type TEXT NOT NULL,
-        target_seconds INTEGER NOT NULL,
-        target_category TEXT,
-        period TEXT NOT NULL,
-        start_date TEXT NOT NULL,
-        completed_at INTEGER
-      );
-      CREATE TABLE IF NOT EXISTS skill_xp_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        skill_id TEXT NOT NULL,
-        xp_delta INTEGER NOT NULL,
-        recorded_at INTEGER NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_skill_xp_log_skill ON skill_xp_log(skill_id, recorded_at);
-      CREATE TABLE IF NOT EXISTS grind_tasks (
-        id TEXT PRIMARY KEY,
-        text TEXT NOT NULL,
-        done INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS session_checkpoint (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        start_time INTEGER NOT NULL,
-        elapsed_seconds INTEGER NOT NULL,
-        paused_accumulated INTEGER NOT NULL DEFAULT 0,
-        updated_at INTEGER NOT NULL
-      );
-    `)
-    // Migration: add keystrokes column if missing (for existing databases)
-    try {
-      const cols = db.pragma('table_info(activities)') as { name: string }[]
-      if (!cols.find((c) => c.name === 'keystrokes')) {
-        db.exec('ALTER TABLE activities ADD COLUMN keystrokes INTEGER NOT NULL DEFAULT 0')
-      }
-    } catch { /* ignore */ }
+    runMigrations(db)
   }
   return db
 }

@@ -500,7 +500,7 @@ const MUSIC_TITLE = /youtube\s*music|music\.youtube|яндекс\s*музык|mu
 const LEARNING_TITLE = /подкаст|podcast|лекци|lecture|курс|course|udemy|stepik|edx|coursera|обучение|learning|теория/i
 
 /** Returns one or more categories (e.g. music + learning for podcast on music site). */
-function categorizeMultiple(appName: string, windowTitle: string): ActivityCategory[] {
+export function categorizeMultiple(appName: string, windowTitle: string): ActivityCategory[] {
   const lowerApp = appName.toLowerCase().replace(/\.(exe|app)$/i, '')
   const lowerTitle = windowTitle.toLowerCase()
   // When process name is unknown (e.g. protected), infer from window title

@@ -67,6 +67,11 @@ export function useFriends() {
       useNavBadgeStore.getState().setIncomingRequestsCount(0)
       return
     }
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setError('No internet connection')
+      setLoading(false)
+      return
+    }
     setError(null)
     if (showLoading) setLoading(true)
     try {
