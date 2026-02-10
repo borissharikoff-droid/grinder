@@ -30,6 +30,8 @@ try {
   Add-Type -TypeDefinition @"
 using System;
 using System.IO;
+using System.Text;
+using System.Threading;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 public class WinApi {
@@ -37,10 +39,10 @@ public class WinApi {
     public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
-    [DllImport("user32.dll", EntryPoint = "GetWindowTextW")]
-    private static extern int _GetWindowText(IntPtr hWnd, IntPtr lpString, int nMaxCount);
-    [DllImport("user32.dll", EntryPoint = "GetWindowTextLengthW")]
-    private static extern int _GetWindowTextLength(IntPtr hWnd);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowText(IntPtr hWnd, byte[] lpString, int nMaxCount);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowTextLength(IntPtr hWnd);
     [DllImport("user32.dll")]
     public static extern short GetAsyncKeyState(int vKey);
     [DllImport("user32.dll")]
@@ -53,23 +55,21 @@ public class WinApi {
         public uint dwTime;
     }
     private static Stream _stdout = Console.OpenStandardOutput();
-    public static void WriteUtf8Line(string text) {
+    private static void WriteUtf8Line(string text) {
         byte[] bytes = Encoding.UTF8.GetBytes(text + "\\n");
         _stdout.Write(bytes, 0, bytes.Length);
         _stdout.Flush();
     }
-    public static string GetTitle(IntPtr hWnd) {
-        int len = _GetWindowTextLength(hWnd);
+    private static string GetTitle(IntPtr hWnd) {
+        int len = GetWindowTextLength(hWnd);
         if (len <= 0) return "";
-        IntPtr buf = Marshal.AllocHGlobal((len + 1) * 2);
-        try {
-            _GetWindowText(hWnd, buf, len + 1);
-            return Marshal.PtrToStringUni(buf) ?? "";
-        } finally {
-            Marshal.FreeHGlobal(buf);
-        }
+        int bufSize = (len + 2) * 2;
+        byte[] buf = new byte[bufSize];
+        int copied = GetWindowText(hWnd, buf, len + 1);
+        if (copied <= 0) return "";
+        return Encoding.Unicode.GetString(buf, 0, copied * 2);
     }
-    public static int CountKeyPresses() {
+    private static int CountKeyPresses() {
         int count = 0;
         for (int vk = 0x08; vk <= 0xFE; vk++) {
             short state = GetAsyncKeyState(vk);
@@ -77,70 +77,62 @@ public class WinApi {
         }
         return count;
     }
-    public static int GetIdleMs() {
+    private static int GetIdleMs() {
         LASTINPUTINFO lii = new LASTINPUTINFO();
         lii.cbSize = (uint)Marshal.SizeOf(typeof(LASTINPUTINFO));
         if (!GetLastInputInfo(ref lii)) return 0;
         uint now = GetTickCount();
         return (int)(now - lii.dwTime);
     }
-    public static string GetProcessName(uint pid) {
+    private static string GetProcessName(uint pid) {
         try {
-            Process p = Process.GetProcessById((int)pid);
-            return p.ProcessName;
+            return Process.GetProcessById((int)pid).ProcessName;
         } catch {
             return null;
         }
     }
+    public static void RunLoop() {
+        WriteUtf8Line("READY");
+        while (true) {
+            try {
+                int keys = 0;
+                try { keys = CountKeyPresses(); } catch {}
+                int idleMs = 0;
+                try { idleMs = GetIdleMs(); } catch {}
+                IntPtr hwnd = GetForegroundWindow();
+                uint pid = 0;
+                GetWindowThreadProcessId(hwnd, out pid);
+                string rawTitle = GetTitle(hwnd);
+                string title = rawTitle.Replace("\\r", " ").Replace("\\n", " ").Replace("|", "&#124;").Trim();
+                string pname = null;
+                if (pid > 0) {
+                    try { pname = GetProcessName(pid); } catch {}
+                }
+                string line;
+                if (pname == "explorer" && string.IsNullOrWhiteSpace(title)) {
+                    line = "WIN:Idle||" + keys + "|" + idleMs;
+                } else if (pname != null) {
+                    line = "WIN:" + pname + "|" + title + "|" + keys + "|" + idleMs;
+                } else if (title.Length > 0) {
+                    line = "WIN:Unknown|" + title + "|" + keys + "|" + idleMs;
+                } else {
+                    line = "WIN:Idle||" + keys + "|" + idleMs;
+                }
+                WriteUtf8Line(line);
+            } catch (Exception ex) {
+                string msg = (ex.Message ?? "").Replace("|", " ").Replace("\\r", " ").Replace("\\n", " ");
+                WriteUtf8Line("ERR:loop-" + msg);
+            }
+            Thread.Sleep(1500);
+        }
+    }
 }
 "@
-  [WinApi]::WriteUtf8Line("READY")
+  [WinApi]::RunLoop()
 } catch {
-  [Console]::Out.WriteLine("ERR:AddType-" + ($_.Exception.Message -replace '[|\r\n]', ' '))
+  [Console]::Out.WriteLine("ERR:AddType-" + ($_.Exception.Message -replace '[|\\r\\n]', ' '))
   [Console]::Out.Flush()
   exit 1
-}
-while ($true) {
-    try {
-        $keys = 0
-        try { $keys = [WinApi]::CountKeyPresses() } catch { }
-        $idleMs = 0
-        try { $idleMs = [WinApi]::GetIdleMs() } catch { }
-        $hwnd = [WinApi]::GetForegroundWindow()
-        $pid2 = [uint32]0
-        [void][WinApi]::GetWindowThreadProcessId($hwnd, [ref]$pid2)
-        $rawTitle = [WinApi]::GetTitle($hwnd)
-        $title = ($rawTitle -replace '[\r\n]+', ' ' -replace '\|', '&#124;').Trim()
-        $pname = $null
-        if ($pid2 -gt 0) {
-            try { $pname = [WinApi]::GetProcessName($pid2) } catch { }
-            if (-not $pname) {
-                try {
-                    $proc = Get-Process -Id $pid2 -ErrorAction SilentlyContinue
-                    if ($proc) { $pname = $proc.ProcessName }
-                } catch { }
-            }
-            if (-not $pname) {
-                try {
-                    $cim = Get-CimInstance Win32_Process -Filter ("ProcessId = " + $pid2) -ErrorAction SilentlyContinue
-                    if ($cim -and $cim.Name) { $pname = [System.IO.Path]::GetFileNameWithoutExtension($cim.Name) }
-                } catch { }
-            }
-        }
-        if ($pname -eq 'explorer' -and [string]::IsNullOrWhiteSpace($title)) {
-            [WinApi]::WriteUtf8Line("WIN:Idle||" + $keys + "|" + $idleMs)
-        } elseif ($pname) {
-            [WinApi]::WriteUtf8Line("WIN:" + $pname + "|" + $title + "|" + $keys + "|" + $idleMs)
-        } elseif ($title) {
-            [WinApi]::WriteUtf8Line("WIN:Unknown|" + $title + "|" + $keys + "|" + $idleMs)
-        } else {
-            [WinApi]::WriteUtf8Line("WIN:Idle||" + $keys + "|" + $idleMs)
-        }
-    } catch {
-        $errMsg = ($_.Exception.Message -replace '[|\r\n]', ' ')
-        [WinApi]::WriteUtf8Line("ERR:loop-" + $errMsg)
-    }
-    Start-Sleep -Milliseconds 1500
 }
 `.replace(/\r?\n/g, '\n').trim()
 
