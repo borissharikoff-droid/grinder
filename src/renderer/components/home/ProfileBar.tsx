@@ -6,6 +6,7 @@ import { computeTotalSkillLevel, MAX_TOTAL_SKILL_LEVEL } from '../../lib/skills'
 import { detectPersona } from '../../lib/persona'
 import { FRAMES, BADGES, getEquippedFrame, getEquippedBadges } from '../../lib/cosmetics'
 import { playClickSound } from '../../lib/sounds'
+import { useAlertStore } from '../../stores/alertStore'
 
 interface ProfileBarProps {
   onNavigateProfile?: () => void
@@ -24,6 +25,7 @@ export function ProfileBar({ onNavigateProfile }: ProfileBarProps) {
   const [loaded, setLoaded] = useState(false)
   const activeFrame = FRAMES.find(f => f.id === frameId)
   const streakMult = getStreakMultiplier(streak)
+  const lootCount = useAlertStore((s) => (s.currentAlert ? 1 : 0) + s.queue.length)
 
   useEffect(() => {
     if (supabase && user) {
@@ -77,6 +79,11 @@ export function ProfileBar({ onNavigateProfile }: ProfileBarProps) {
           >
             {avatar}
           </div>
+          {lootCount > 0 && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-cyber-neon text-discord-darker text-[9px] font-bold flex items-center justify-center shadow-[0_0_6px_rgba(0,255,136,0.5)]">
+              {lootCount}
+            </span>
+          )}
         </button>
 
         {/* Name + badges */}

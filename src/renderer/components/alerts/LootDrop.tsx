@@ -107,8 +107,8 @@ export function LootDrop() {
               </motion.p>
             </div>
 
-            {/* Content */}
-            <div className="px-6 pt-1 pb-4 min-h-[120px] flex flex-col">
+            {/* Content — fixed height so button stays in same position */}
+            <div className="px-6 pt-1 pb-4 h-[120px] flex flex-col">
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -118,7 +118,7 @@ export function LootDrop() {
                 <span className="text-cyber-neon font-mono text-sm font-bold">+{currentAlert.achievement.xpReward} XP</span>
               </motion.div>
 
-              <div className="flex-1 min-h-0 flex items-center justify-center">
+              <div className="flex-1 min-h-0 flex items-center justify-center overflow-hidden">
                 {currentAlert.achievement.reward && !showReward && (
                   <motion.div
                     initial={{ opacity: 0 }}
@@ -144,18 +144,18 @@ export function LootDrop() {
                     initial={{ scale: 0.5, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ type: 'spring', stiffness: 200 }}
-                    className="w-full rounded-xl bg-gradient-to-b from-cyber-neon/10 to-discord-darker/80 border border-cyber-neon/20 p-4 text-center"
+                    className="w-full rounded-xl bg-gradient-to-b from-cyber-neon/10 to-discord-darker/80 border border-cyber-neon/20 p-3 text-center"
                   >
                     <motion.div
                       initial={{ scale: 0 }}
                       animate={{ scale: [0, 1.3, 1] }}
                       transition={{ duration: 0.5 }}
-                      className="text-4xl mb-2"
+                      className="text-3xl mb-1"
                     >
                       {currentAlert.achievement.reward.value}
                     </motion.div>
                     <p className="text-white text-xs font-medium">{currentAlert.achievement.reward.label}</p>
-                    <p className="text-gray-500 text-[10px] mt-1 font-mono">
+                    <p className="text-gray-500 text-[10px] mt-0.5 font-mono">
                       {currentAlert.achievement.reward.type === 'avatar' ? 'now in Settings → avatar' : 'equipped'}
                     </p>
                   </motion.div>
@@ -165,7 +165,7 @@ export function LootDrop() {
               </div>
             </div>
 
-            {/* Fixed action bar — Claim and Nice in exact same spot */}
+            {/* Action bar — button always in same position */}
             <div className="px-6 pb-5 pt-0 h-[44px] flex items-center">
               {currentAlert.achievement.reward && !showReward ? (
                 <button

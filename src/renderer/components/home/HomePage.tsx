@@ -9,7 +9,6 @@ import { MotivationBanner } from './MotivationBanner'
 import { WelcomeBanner } from './WelcomeBanner'
 import { GoalWidget } from './GoalWidget'
 import { useSessionStore } from '../../stores/sessionStore'
-import mascotImg from '../../assets/mascot.png'
 
 interface HomePageProps {
   onNavigateProfile: () => void
@@ -43,30 +42,17 @@ export function HomePage({ onNavigateProfile }: HomePageProps) {
     <div className="flex flex-col h-full">
       <ProfileBar onNavigateProfile={onNavigateProfile} />
 
-      <div className="flex-1 flex flex-col items-center justify-start pt-4 pb-4 px-4 gap-8">
-        {/* Top: mascot + banner */}
-        <div className="flex flex-col items-center w-full px-2">
-          {showWelcome && status === 'idle' ? (
-            <WelcomeBanner onDismiss={handleDismissWelcome} />
-          ) : (
-            <>
-              <img
-                src={mascotImg}
-                alt=""
-                className="w-16 h-16 mb-3"
-                draggable={false}
-              />
-              <MotivationBanner isRunning={status !== 'idle'} />
-            </>
-          )}
-        </div>
+      <div className="flex-1 flex flex-col items-center justify-center pb-4 px-4 gap-6">
+        {showWelcome && status === 'idle' ? (
+          <WelcomeBanner onDismiss={handleDismissWelcome} />
+        ) : (
+          <MotivationBanner isRunning={status !== 'idle'} />
+        )}
 
         {/* Timer */}
-        <div className="flex flex-col items-center">
-          <Timer />
-        </div>
+        <Timer />
 
-        {/* Controls + activity / Browser Mode */}
+        {/* Controls + activity */}
         <div className="flex flex-col items-center gap-5">
           <SessionControls glowPulse={showWelcome && status === 'idle'} />
           <AnimatePresence>
@@ -85,7 +71,7 @@ export function HomePage({ onNavigateProfile }: HomePageProps) {
         </div>
 
         {/* Goal */}
-        <div className="flex flex-col items-center w-full max-w-xs mt-1">
+        <div className="flex flex-col items-center w-full max-w-xs">
           <GoalWidget />
         </div>
       </div>
