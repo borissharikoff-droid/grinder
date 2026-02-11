@@ -289,8 +289,8 @@ export function SkillsPage() {
                 className="w-11 h-11 rounded-lg flex flex-col items-center justify-center"
                 style={{ backgroundColor: `${skill.color}10`, border: `1px solid ${skill.color}20` }}
               >
-                <span className="text-[10px] text-gray-500 font-mono leading-none">LV</span>
                 <span className="text-base font-mono font-bold leading-tight" style={{ color: skill.color }}>{level}</span>
+                <span className="text-[8px] text-gray-600 font-mono leading-none">/99</span>
               </div>
             </div>
           </div>
