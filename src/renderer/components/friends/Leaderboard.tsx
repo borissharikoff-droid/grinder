@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
 import { FRAMES, BADGES } from '../../lib/cosmetics'
+import { computeTotalSkillLevelFromLevels } from '../../lib/skills'
 import { getPersonaById } from '../../lib/persona'
 
 interface LeaderboardRow {
@@ -65,12 +66,20 @@ export function Leaderboard() {
 
         const skillLevelByUser: Record<string, number> = {}
         try {
-          const { data: skillsRows } = await supabase.from('user_skills').select('user_id, level').in('user_id', ids)
-          ;(skillsRows || []).forEach((r: { user_id: string; level: number }) => {
-            skillLevelByUser[r.user_id] = (skillLevelByUser[r.user_id] || 0) + (r.level || 0)
+          const { data: skillsRows } = await supabase.from('user_skills').select('user_id, skill_id, level').in('user_id', ids)
+          const byUser = new Map<string, { skill_id: string; level: number }[]>()
+          ;(skillsRows || []).forEach((r: { user_id: string; skill_id: string; level: number }) => {
+            if (!byUser.has(r.user_id)) byUser.set(r.user_id, [])
+            byUser.get(r.user_id)!.push({ skill_id: r.skill_id, level: r.level })
           })
+          for (const uid of ids) {
+            skillLevelByUser[uid] = computeTotalSkillLevelFromLevels(byUser.get(uid) || [])
+          }
         } catch {
-          // user_skills may not exist
+          // user_skills may not exist — default all to 8 (8 skills × level 1)
+          for (const uid of ids) {
+            skillLevelByUser[uid] = 8
+          }
         }
 
         const list: LeaderboardRow[] = (profiles || []).map((p) => ({

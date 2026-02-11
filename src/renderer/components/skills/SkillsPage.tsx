@@ -116,6 +116,14 @@ function SkillDetailPanel({ skill, level, xp, current, needed }: {
         </>
       )}
 
+      {loaded && topApps.length === 0 && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }}>
+          <div className="h-px bg-white/[0.06] my-1" />
+          <p className="text-[10px] text-gray-500 font-mono uppercase tracking-wider">{labels.appsTitle}</p>
+          <p className="text-[10px] text-gray-600 mt-1">No data yet — finish a session to see stats</p>
+        </motion.div>
+      )}
+
       {loaded && topApps.length > 0 && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }}>
           <div className="h-px bg-white/[0.06] my-1" />
