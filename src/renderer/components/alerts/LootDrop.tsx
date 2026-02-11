@@ -144,7 +144,7 @@ export function LootDrop() {
                     initial={{ scale: 0.5, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ type: 'spring', stiffness: 200 }}
-                    className="w-full rounded-xl bg-gradient-to-b from-cyber-neon/10 to-discord-darker/80 border border-cyber-neon/20 p-3 text-center"
+                    className="w-full rounded-xl bg-discord-darker/80 p-3 text-center"
                   >
                     <motion.div
                       initial={{ scale: 0 }}
