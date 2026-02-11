@@ -10,6 +10,14 @@ import { useEffect, useMemo } from 'react'
 export function SkillLevelUpModal() {
   const { pendingSkillLevelUpSkill, dismissSkillLevelUp, currentActivity } = useSessionStore()
 
+  const skillId = pendingSkillLevelUpSkill?.skillId ?? ''
+  const level = pendingSkillLevelUpSkill?.level ?? 0
+  const skill = getSkillById(skillId)
+
+  // Stable quote — computed once per level-up, not on every re-render
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const quote = useMemo(() => (skillId ? getSkillQuote(skillId) : ''), [skillId, level])
+
   useEffect(() => {
     if (pendingSkillLevelUpSkill) {
       playSessionCompleteSound()
@@ -29,15 +37,7 @@ export function SkillLevelUpModal() {
     return () => window.removeEventListener('keydown', handler)
   }, [pendingSkillLevelUpSkill, dismissSkillLevelUp])
 
-  if (!pendingSkillLevelUpSkill) return null
-
-  const { skillId, level } = pendingSkillLevelUpSkill
-  const skill = getSkillById(skillId)
-  if (!skill) return null
-
-  // Stable quote — computed once per level-up, not on every re-render
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const quote = useMemo(() => getSkillQuote(skillId), [skillId, level])
+  if (!pendingSkillLevelUpSkill || !skill) return null
   const milestoneLoot = getSkillMilestoneReward(skillId, level)
   const appName = currentActivity?.appName || null
 
