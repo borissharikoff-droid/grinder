@@ -21,6 +21,7 @@ import { categoryToSkillId, getSkillById } from './lib/skills'
 import { warmUpAudio } from './lib/sounds'
 import { ACHIEVEMENTS } from './lib/xp'
 import { useNavBadgeStore } from './stores/navBadgeStore'
+import { useUpdateChecker } from './hooks/useUpdateChecker'
 
 export type TabId = 'home' | 'skills' | 'stats' | 'profile' | 'friends' | 'settings'
 
@@ -43,6 +44,7 @@ export default function App() {
   useProfileSync()
   useKeyboardShortcuts()
   useFriends() // run so friend presence polling + online/leveling toasts work on all tabs
+  useUpdateChecker()
 
   // Pre-warm audio context on first user gesture
   useEffect(() => {
