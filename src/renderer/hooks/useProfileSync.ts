@@ -4,6 +4,7 @@ import { useAuthStore } from '../stores/authStore'
 import { computeTotalSkillLevel } from '../lib/skills'
 import { getEquippedBadges, getEquippedFrame } from '../lib/cosmetics'
 import { detectPersona } from '../lib/persona'
+import { syncSkillsToSupabase } from '../services/supabaseSync'
 
 export function useProfileSync() {
   const { user } = useAuthStore()
@@ -51,6 +52,11 @@ export function useProfileSync() {
       } catch {
         // Columns may not exist yet — safe to ignore
       }
+
+      // Sync skill levels to user_skills so friends see up-to-date levels
+      if (api) {
+        syncSkillsToSupabase(api).catch(() => {})
+      }
     }
 
     sync()
@@ -63,6 +69,16 @@ export function useProfileSync() {
 
 export function usePresenceSync(presenceLabel: string | null, isSessionActive: boolean, appName: string | null) {
   const { user } = useAuthStore()
+  const sessionStartRef = useRef<string | null>(null)
+
+  // Track session start time locally
+  useEffect(() => {
+    if (isSessionActive && !sessionStartRef.current) {
+      sessionStartRef.current = new Date().toISOString()
+    } else if (!isSessionActive) {
+      sessionStartRef.current = null
+    }
+  }, [isSessionActive])
 
   // Set online on mount, offline on unmount
   useEffect(() => {
@@ -71,8 +87,12 @@ export function usePresenceSync(presenceLabel: string | null, isSessionActive: b
 
     const handleBeforeUnload = () => {
       if (supabase && user) {
-        // Use sendBeacon-style: can't await but fire it
-        supabase.from('profiles').update({ is_online: false, current_activity: null, updated_at: new Date().toISOString() }).eq('id', user.id).then(() => {})
+        supabase.from('profiles').update({
+          is_online: false,
+          current_activity: null,
+          session_started_at: null,
+          updated_at: new Date().toISOString(),
+        }).eq('id', user.id).then(() => {})
       }
     }
     window.addEventListener('beforeunload', handleBeforeUnload)
@@ -82,7 +102,7 @@ export function usePresenceSync(presenceLabel: string | null, isSessionActive: b
     }
   }, [user])
 
-  // Update current activity: "Leveling X" or "Leveling X · AppName" or just "AppName"
+  // Update current activity + session_started_at
   useEffect(() => {
     if (!supabase || !user) return
     let activity: string | null = null
@@ -95,6 +115,7 @@ export function usePresenceSync(presenceLabel: string | null, isSessionActive: b
     }
     supabase.from('profiles').update({
       current_activity: activity,
+      session_started_at: isSessionActive ? sessionStartRef.current : null,
       is_online: true,
       updated_at: new Date().toISOString(),
     }).eq('id', user.id).then(() => {})

@@ -1,9 +1,28 @@
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import type { FriendProfile } from '../../hooks/useFriends'
 import { getSkillById, getSkillByName, MAX_TOTAL_SKILL_LEVEL } from '../../lib/skills'
 import { FRAMES, BADGES } from '../../lib/cosmetics'
 import { getPersonaById } from '../../lib/persona'
 import { playClickSound } from '../../lib/sounds'
+
+function GrindTimer({ startedAt }: { startedAt: string }) {
+  const [elapsed, setElapsed] = useState('')
+  useEffect(() => {
+    const start = new Date(startedAt).getTime()
+    const tick = () => {
+      const sec = Math.max(0, Math.floor((Date.now() - start) / 1000))
+      const h = Math.floor(sec / 3600)
+      const m = Math.floor((sec % 3600) / 60)
+      const s = sec % 60
+      setElapsed(h > 0 ? `${h}h ${m}m` : `${m}:${String(s).padStart(2, '0')}`)
+    }
+    tick()
+    const iv = setInterval(tick, 1000)
+    return () => clearInterval(iv)
+  }, [startedAt])
+  return <span className="text-[9px] text-cyber-neon/70 font-mono">{elapsed}</span>
+}
 
 interface FriendListProps {
   friends: FriendProfile[]
@@ -129,6 +148,7 @@ export function FriendList({ friends, onSelectFriend, onMessageFriend, unreadByF
                         <span className="text-[11px] text-gray-400 font-medium flex items-center gap-1.5">
                           {skill?.icon && <span className="text-sm">{skill.icon}</span>}
                           Leveling {levelingSkill}
+                          {f.session_started_at && <GrindTimer startedAt={f.session_started_at} />}
                         </span>
                       )
                     })() : activityLabel ? (

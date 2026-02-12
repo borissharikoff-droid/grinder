@@ -1,9 +1,27 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { supabase } from '../../lib/supabase'
+
+function GrindTimer({ startedAt }: { startedAt: string }) {
+  const [elapsed, setElapsed] = useState('')
+  useEffect(() => {
+    const start = new Date(startedAt).getTime()
+    const tick = () => {
+      const sec = Math.max(0, Math.floor((Date.now() - start) / 1000))
+      const h = Math.floor(sec / 3600)
+      const m = Math.floor((sec % 3600) / 60)
+      const s = sec % 60
+      setElapsed(h > 0 ? `${h}h ${m}m` : `${m}:${String(s).padStart(2, '0')}`)
+    }
+    tick()
+    const iv = setInterval(tick, 1000)
+    return () => clearInterval(iv)
+  }, [startedAt])
+  return <span className="text-[10px] text-cyber-neon font-mono">⏱ {elapsed}</span>
+}
 import type { FriendProfile as FriendProfileType } from '../../hooks/useFriends'
 import { FRAMES, BADGES } from '../../lib/cosmetics'
-import { getSkillById, getSkillByName, SKILLS } from '../../lib/skills'
+import { getSkillById, getSkillByName, SKILLS, computeTotalSkillLevelFromLevels } from '../../lib/skills'
 import { getPersonaById } from '../../lib/persona'
 import { ACHIEVEMENTS } from '../../lib/xp'
 
@@ -73,7 +91,9 @@ export function FriendProfile({ profile, onBack, onCompare, onMessage }: FriendP
   const { activityLabel, appName } = parseActivity(profile.current_activity ?? null)
   const isLeveling = profile.is_online && activityLabel.startsWith('Leveling ')
   const levelingSkill = isLeveling ? activityLabel.replace('Leveling ', '') : null
-  const totalSkillLevel = profile.total_skill_level ?? 0
+  const totalSkillLevel = allSkills.length > 0
+    ? computeTotalSkillLevelFromLevels(allSkills.map(s => ({ skill_id: s.skill_id, level: s.level })))
+    : (profile.total_skill_level ?? 0)
   const persona = getPersonaById(profile.persona_id ?? null)
 
   // Unlocked achievements details
@@ -173,10 +193,13 @@ export function FriendProfile({ profile, onBack, onCompare, onMessage }: FriendP
                   isLeveling ? (() => {
                     const skill = getSkillByName(levelingSkill ?? '')
                     return (
-                      <span className="text-[11px] text-cyber-neon font-medium flex items-center gap-1.5">
-                        {skill?.icon && <span className="text-sm">{skill.icon}</span>}
-                        Leveling {levelingSkill}
-                      </span>
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[11px] text-cyber-neon font-medium flex items-center gap-1.5">
+                          {skill?.icon && <span className="text-sm">{skill.icon}</span>}
+                          Leveling {levelingSkill}
+                        </span>
+                        {profile.session_started_at && <GrindTimer startedAt={profile.session_started_at} />}
+                      </div>
                     )
                   })() : activityLabel ? (
                     <span className="text-[11px] text-blue-400">{activityLabel}</span>

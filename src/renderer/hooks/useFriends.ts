@@ -35,6 +35,8 @@ export interface FriendProfile {
   total_skill_level?: number
   /** Focus persona: developer, gamer, scholar, etc. (synced from app) */
   persona_id?: string | null
+  /** When current grind session started (ISO string) */
+  session_started_at?: string | null
 }
 
 export interface PendingRequest {
@@ -117,6 +119,7 @@ export function useFriends() {
             friendship_status: f.status,
             top_skills: [] as FriendSkill[],
             persona_id: (p.persona_id as string | null) ?? null,
+            session_started_at: (p.session_started_at as string | null) ?? null,
           }
         })
         try {
