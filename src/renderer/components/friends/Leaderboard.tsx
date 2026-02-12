@@ -64,22 +64,26 @@ export function Leaderboard() {
           // session_summaries table may not exist yet
         }
 
+        // Compute total skill level: prefer user_skills data if available,
+        // otherwise fall back to profiles.level (synced every 60s by useProfileSync)
         const skillLevelByUser: Record<string, number> = {}
         try {
           const { data: skillsRows } = await supabase.from('user_skills').select('user_id, skill_id, level').in('user_id', ids)
-          const byUser = new Map<string, { skill_id: string; level: number }[]>()
+          const skillsByUser = new Map<string, { skill_id: string; level: number }[]>()
           ;(skillsRows || []).forEach((r: { user_id: string; skill_id: string; level: number }) => {
-            if (!byUser.has(r.user_id)) byUser.set(r.user_id, [])
-            byUser.get(r.user_id)!.push({ skill_id: r.skill_id, level: r.level })
+            if (!skillsByUser.has(r.user_id)) skillsByUser.set(r.user_id, [])
+            skillsByUser.get(r.user_id)!.push({ skill_id: r.skill_id, level: r.level })
           })
           for (const uid of ids) {
-            skillLevelByUser[uid] = computeTotalSkillLevelFromLevels(byUser.get(uid) || [])
+            const userSkills = skillsByUser.get(uid)
+            if (userSkills && userSkills.length > 0) {
+              // User has skill data synced — compute from it
+              skillLevelByUser[uid] = computeTotalSkillLevelFromLevels(userSkills)
+            }
+            // Otherwise leave undefined so we fall back to profiles.level below
           }
         } catch {
-          // user_skills may not exist — default all to 8 (8 skills × level 1)
-          for (const uid of ids) {
-            skillLevelByUser[uid] = 8
-          }
+          // user_skills table may not exist yet — will use profiles.level fallback
         }
 
         const list: LeaderboardRow[] = (profiles || []).map((p) => ({

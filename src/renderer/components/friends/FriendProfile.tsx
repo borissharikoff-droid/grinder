@@ -239,7 +239,12 @@ export function FriendProfile({ profile, onBack, onCompare, onMessage }: FriendP
 
       {/* All Skills */}
       <div className="rounded-xl bg-discord-card/80 border border-white/10 p-4 space-y-2.5">
-        <p className="text-[10px] uppercase tracking-wider text-gray-500 font-mono">Skills</p>
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] uppercase tracking-wider text-gray-500 font-mono">Skills</p>
+          {allSkills.length === 0 && (
+            <span className="text-[9px] text-gray-600 font-mono">waiting for sync…</span>
+          )}
+        </div>
         {(() => {
           const skillMap = new Map(allSkills.map((s) => [s.skill_id, s]))
           return SKILLS.map((skillDef) => {
