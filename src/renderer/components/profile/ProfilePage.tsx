@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
-import { ACHIEVEMENTS, levelFromTotalXP, xpProgressInLevel } from '../../lib/xp'
+import { ACHIEVEMENTS } from '../../lib/xp'
+import { computeTotalSkillLevel, MAX_TOTAL_SKILL_LEVEL } from '../../lib/skills'
 import type { AchievementDef } from '../../lib/xp'
 import { useAlertStore } from '../../stores/alertStore'
 import { playClickSound } from '../../lib/sounds'
@@ -33,7 +34,7 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
 
   // Stats
-  const [totalXP, setTotalXP] = useState(0)
+  const [totalSkillLevel, setTotalSkillLevel] = useState(0)
   const [persona, setPersona] = useState<{ emoji: string; label: string; description: string } | null>(null)
 
   // Achievements
@@ -68,10 +69,19 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
     // Load local stats
     const api = window.electronAPI
     if (api?.db) {
-      api.db.getLocalStat('total_xp').then((v) => setTotalXP(parseInt(v || '0', 10)))
+      if (api.db.getAllSkillXP) {
+        api.db.getAllSkillXP().then((rows: { skill_id: string; total_xp: number }[]) => {
+          setTotalSkillLevel(computeTotalSkillLevel(rows || []))
+        })
+      }
       api.db.getUnlockedAchievements().then(setUnlockedIds)
     } else {
-      setTotalXP(parseInt(localStorage.getItem('idly_total_xp') || '0', 10))
+      try {
+        const stored = JSON.parse(localStorage.getItem('idly_skill_xp') || '{}') as Record<string, number>
+        setTotalSkillLevel(computeTotalSkillLevel(Object.entries(stored).map(([skill_id, total_xp]) => ({ skill_id, total_xp }))))
+      } catch {
+        setTotalSkillLevel(0)
+      }
       setUnlockedIds(JSON.parse(localStorage.getItem('idly_unlocked_achievements') || '[]'))
     }
 
@@ -93,9 +103,6 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
     setUnlockedFrameIds(getUnlockedFrames())
   }, [user])
 
-  const level = levelFromTotalXP(totalXP)
-  const { current, needed } = xpProgressInLevel(totalXP)
-  const pct = Math.min(100, (current / needed) * 100)
   const hasChanges = profileLoaded && (username !== originalUsername || avatar !== originalAvatar)
 
   const saveProfile = async () => {
@@ -229,7 +236,7 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-white font-bold text-base truncate">{username || 'Idly'}</span>
-              <span className="text-cyber-neon font-mono text-xs">Lv.{level}</span>
+              <span className="text-cyber-neon font-mono text-xs" title="Total skill level">{totalSkillLevel}/{MAX_TOTAL_SKILL_LEVEL}</span>
             </div>
 
             {/* Equipped badges */}
@@ -254,22 +261,6 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
             {persona && (
               <span className="text-[10px] text-gray-500">{persona.emoji} {persona.label}</span>
             )}
-
-            {/* XP bar */}
-            <div className="mt-1.5">
-              <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${pct}%` }}
-                  transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-                  className="h-full rounded-full bg-gradient-to-r from-cyber-neon to-discord-accent"
-                />
-              </div>
-              <div className="flex items-center justify-between mt-0.5">
-                <span className="text-[9px] text-gray-600 font-mono">{current}/{needed} XP</span>
-                <span className="text-[9px] text-gray-600 font-mono">{totalXP} total</span>
-              </div>
-            </div>
           </div>
         </div>
       </div>

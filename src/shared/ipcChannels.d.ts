@@ -65,6 +65,10 @@ export declare const IPC_CHANNELS: {
     readonly notify: {
         readonly show: "notify:show";
     };
+    readonly window: {
+        readonly flashFrame: "window:flashFrame";
+        readonly setBadgeCount: "window:setBadgeCount";
+    };
     readonly data: {
         readonly exportSessions: "data:exportSessions";
     };

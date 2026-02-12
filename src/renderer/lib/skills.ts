@@ -7,9 +7,10 @@ const MAX_LEVEL = 99
 const MAX_XP = 3_600_000 // 1000 hours in seconds
 const CURVE_EXPONENT = 2.2
 
-/** Cumulative XP required to reach level L (1-based). Level 1 starts at 0 XP. */
+/** Cumulative XP required to reach level L. Level 0 = 0 XP, level 1 = 1+ XP. */
 function xpForLevel(L: number): number {
-  if (L <= 1) return 0
+  if (L <= 0) return 0
+  if (L === 1) return 1
   if (L >= MAX_LEVEL) return MAX_XP
   return Math.floor(Math.pow(L / MAX_LEVEL, CURVE_EXPONENT) * MAX_XP)
 }
@@ -64,11 +65,11 @@ export function getSkillByName(name: string): SkillDef | undefined {
   return SKILLS.find((s) => s.name.toLowerCase() === n.toLowerCase())
 }
 
-/** Level (1–99) from total XP. */
+/** Level (0–99) from total XP. 0 = no progress, 1–99 = leveled. */
 export function skillLevelFromXP(xp: number): number {
-  if (xp <= 0) return 1
+  if (xp <= 0) return 0
   if (xp >= MAX_XP) return MAX_LEVEL
-  let level = 1
+  let level = 0
   while (level < MAX_LEVEL && xpForLevel(level + 1) <= xp) {
     level++
   }
@@ -86,8 +87,8 @@ export function skillXPProgress(xp: number): { current: number; needed: number }
 }
 
 /**
- * Compute total skill level counting ALL skills (untracked = level 1).
- * Accepts rows from DB (skill_id + total_xp) — missing skills default to level 1.
+ * Compute total skill level = sum of each skill's level.
+ * Unleveled (0 XP or missing) = 0. Example: listener 5 + designer 10 = 15/792.
  */
 export function computeTotalSkillLevel(rows: { skill_id: string; total_xp: number }[]): number {
   const xpMap = new Map(rows.map((r) => [r.skill_id, r.total_xp]))
@@ -96,11 +97,11 @@ export function computeTotalSkillLevel(rows: { skill_id: string; total_xp: numbe
 
 /**
  * Compute total skill level from pre-computed levels (e.g. from user_skills table).
- * Missing skills default to level 1.
+ * Sum of levels; missing/unleveled = 0.
  */
 export function computeTotalSkillLevelFromLevels(skills: { skill_id: string; level: number }[]): number {
   const levelMap = new Map(skills.map((s) => [s.skill_id, s.level]))
-  return SKILLS.reduce((sum, s) => sum + Math.max(levelMap.get(s.id) ?? 1, 1), 0)
+  return SKILLS.reduce((sum, s) => sum + (levelMap.get(s.id) ?? 0), 0)
 }
 
 /** Total hours for display. */

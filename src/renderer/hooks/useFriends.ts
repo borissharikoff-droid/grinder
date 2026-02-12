@@ -265,11 +265,14 @@ export function useFriends() {
         .is('read_at', null)
         .in('sender_id', friendIds)
       const byFriend: Record<string, number> = {}
+      let totalUnread = 0
       for (const row of rows || []) {
         const sid = (row as { sender_id: string }).sender_id
         byFriend[sid] = (byFriend[sid] || 0) + 1
+        totalUnread++
       }
       setUnreadByFriendId(byFriend)
+      useNavBadgeStore.getState().setUnreadMessagesCount(totalUnread)
     }
     const channel = supabase
       .channel('messages-unread')

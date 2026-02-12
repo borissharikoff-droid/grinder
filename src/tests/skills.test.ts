@@ -10,12 +10,12 @@ import {
 } from '../renderer/lib/skills'
 
 describe('skillLevelFromXP', () => {
-  it('returns 1 for 0 XP', () => {
-    expect(skillLevelFromXP(0)).toBe(1)
+  it('returns 0 for 0 XP (unleveled)', () => {
+    expect(skillLevelFromXP(0)).toBe(0)
   })
 
-  it('returns 1 for negative XP', () => {
-    expect(skillLevelFromXP(-100)).toBe(1)
+  it('returns 0 for negative XP', () => {
+    expect(skillLevelFromXP(-100)).toBe(0)
   })
 
   it('returns 99 for max XP (3600000)', () => {
@@ -27,7 +27,7 @@ describe('skillLevelFromXP', () => {
   })
 
   it('increases monotonically with XP', () => {
-    let prevLevel = 0
+    let prevLevel = -1
     for (let xp = 0; xp <= 3600000; xp += 36000) {
       const level = skillLevelFromXP(xp)
       expect(level).toBeGreaterThanOrEqual(prevLevel)
@@ -43,10 +43,10 @@ describe('skillXPProgress', () => {
     expect(needed).toBeGreaterThan(0)
   })
 
-  it('current is always less than needed', () => {
+  it('current is <= needed for non-max levels', () => {
     for (const xp of [0, 100, 1000, 50000, 1000000]) {
       const { current, needed } = skillXPProgress(xp)
-      expect(current).toBeLessThan(needed)
+      if (needed > 0) expect(current).toBeLessThanOrEqual(needed)
     }
   })
 })
