@@ -27,14 +27,17 @@ export function HomePage({ onNavigateProfile }: HomePageProps) {
 
   // Check for crash recovery checkpoint on mount
   useEffect(() => {
+    if (status !== 'idle') return
     const api = window.electronAPI
     if (!api?.db?.getCheckpoint) return
     api.db.getCheckpoint().then((cp) => {
       if (cp && cp.elapsed_seconds >= 60) {
         setCheckpoint({ elapsed_seconds: cp.elapsed_seconds, updated_at: cp.updated_at })
+      } else {
+        setCheckpoint(null)
       }
     }).catch(() => {})
-  }, [])
+  }, [status])
 
   const dismissCheckpoint = () => {
     setCheckpoint(null)
