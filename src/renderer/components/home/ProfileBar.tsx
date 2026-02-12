@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
 import { getStreakMultiplier } from '../../lib/xp'
@@ -30,6 +30,7 @@ export function ProfileBar({ onNavigateProfile }: ProfileBarProps) {
   const lootCount = useAlertStore((s) => (s.currentAlert ? 1 : 0) + s.queue.length)
   const unreadCount = useNotificationStore((s) => s.unreadCount)
   const [bellOpen, setBellOpen] = useState(false)
+  const bellRef = useRef<HTMLButtonElement>(null)
   const toggleBell = useCallback(() => { playClickSound(); setBellOpen((o) => !o) }, [])
 
   useEffect(() => {
@@ -132,6 +133,7 @@ export function ProfileBar({ onNavigateProfile }: ProfileBarProps) {
         {/* Notification bell */}
         <div className="relative shrink-0">
           <button
+            ref={bellRef}
             onClick={toggleBell}
             className="w-8 h-8 rounded-lg bg-discord-card/60 border border-white/[0.06] flex items-center justify-center text-gray-400 hover:text-white hover:border-white/10 transition-colors relative"
             title="Notifications"
@@ -146,7 +148,7 @@ export function ProfileBar({ onNavigateProfile }: ProfileBarProps) {
               </span>
             )}
           </button>
-          <NotificationPanel open={bellOpen} onClose={() => setBellOpen(false)} />
+          <NotificationPanel open={bellOpen} onClose={() => setBellOpen(false)} bellRef={bellRef} />
         </div>
 
       </div>

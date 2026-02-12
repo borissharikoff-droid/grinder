@@ -16,7 +16,7 @@ type FriendView = 'list' | 'profile' | 'compare' | 'chat'
 
 export function FriendsPage() {
   const { user } = useAuthStore()
-  const { friends, pendingRequests, unreadByFriendId, loading, error, refresh, acceptRequest, rejectRequest } = useFriends()
+  const { friends, pendingRequests, unreadByFriendId, loading, error, refresh, acceptRequest, rejectRequest, removeFriend } = useFriends()
   const [selected, setSelected] = useState<FriendProfileType | null>(null)
   const [view, setView] = useState<FriendView>('list')
   const [showLeaderboard, setShowLeaderboard] = useState(false)
@@ -90,6 +90,11 @@ export function FriendsPage() {
           onBack={() => { setSelected(null); setView('list') }}
           onCompare={() => setView('compare')}
           onMessage={() => setView('chat')}
+          onRemove={async () => {
+            await removeFriend(selected.friendship_id)
+            setSelected(null)
+            setView('list')
+          }}
         />
       ) : (
         <div className="space-y-4">

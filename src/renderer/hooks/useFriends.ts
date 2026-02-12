@@ -252,6 +252,12 @@ export function useFriends() {
     fetchFriends()
   }, [fetchFriends])
 
+  const removeFriend = useCallback(async (friendshipId: string) => {
+    if (!supabase) return
+    await supabase.from('friendships').delete().eq('id', friendshipId)
+    await fetchFriends()
+  }, [fetchFriends])
+
   useEffect(() => {
     fetchFriends()
   }, [fetchFriends])
@@ -308,5 +314,5 @@ export function useFriends() {
   }, [user, fetchFriends])
 
   const refresh = useCallback(() => fetchFriends(true), [fetchFriends])
-  return { friends, pendingRequests, unreadByFriendId, loading, error, refresh, acceptRequest, rejectRequest }
+  return { friends, pendingRequests, unreadByFriendId, loading, error, refresh, acceptRequest, rejectRequest, removeFriend }
 }

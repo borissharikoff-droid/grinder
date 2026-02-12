@@ -235,6 +235,11 @@ export function registerIpcHandlers() {
     if (notificationSender) notificationSender(title, body)
   })
 
+  // ── Window controls ──
+  ipcMain.handle(IPC_CHANNELS.window.flashFrame, () => {
+    if (mainWindow && !mainWindow.isFocused()) mainWindow.flashFrame(true)
+  })
+
   // ── Data export ──
   ipcMain.handle(IPC_CHANNELS.data.exportSessions, async (_, format: unknown) => {
     if (format !== 'csv' && format !== 'json') throw new Error('format must be csv or json')

@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../stores/authStore'
 import { useNavBadgeStore } from '../stores/navBadgeStore'
 import { useFriendToastStore } from '../stores/friendToastStore'
+import { useMessageToastStore } from '../stores/messageToastStore'
 import { playMessageSound } from '../lib/sounds'
 
 export interface ChatMessage {
@@ -71,12 +72,21 @@ export function useChat(peerId: string | null = null) {
           } else {
             addUnreadMessages(1)
             playMessageSound()
+            // Flash Windows taskbar
+            ;(window.electronAPI as any)?.window?.flashFrame?.()
             // Show toast with sender name
             if (supabase) {
-              supabase.from('profiles').select('username').eq('id', row.sender_id).single().then(({ data: profile }) => {
+              supabase.from('profiles').select('username, avatar_url').eq('id', row.sender_id).single().then(({ data: profile }) => {
                 const name = profile?.username?.trim() || 'Friend'
+                const avatar = profile?.avatar_url || '💬'
                 const preview = row.body.length > 30 ? row.body.slice(0, 30) + '...' : row.body
                 useFriendToastStore.getState().push({ type: 'message', friendName: name, messagePreview: preview })
+                useMessageToastStore.getState().push({
+                  senderId: row.sender_id,
+                  senderName: name,
+                  senderAvatar: avatar,
+                  preview,
+                })
               })
             }
           }

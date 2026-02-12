@@ -8,10 +8,12 @@ import { SessionComplete } from './SessionComplete'
 import { MotivationBanner } from './MotivationBanner'
 import { WelcomeBanner } from './WelcomeBanner'
 import { GoalWidget } from './GoalWidget'
+import { MessageToastBanner } from './MessageToastBanner'
 import { useSessionStore } from '../../stores/sessionStore'
 
 interface HomePageProps {
   onNavigateProfile: () => void
+  onNavigateFriends?: () => void
 }
 
 function formatRecoveryDuration(secs: number): string {
@@ -20,7 +22,7 @@ function formatRecoveryDuration(secs: number): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m`
 }
 
-export function HomePage({ onNavigateProfile }: HomePageProps) {
+export function HomePage({ onNavigateProfile, onNavigateFriends }: HomePageProps) {
   const { showComplete, status } = useSessionStore()
   const [showWelcome, setShowWelcome] = useState(false)
   const [checkpoint, setCheckpoint] = useState<{ elapsed_seconds: number; updated_at: number } | null>(null)
@@ -67,6 +69,7 @@ export function HomePage({ onNavigateProfile }: HomePageProps) {
   return (
     <div className="flex flex-col h-full">
       <ProfileBar onNavigateProfile={onNavigateProfile} />
+      <MessageToastBanner onOpenChat={() => onNavigateFriends?.()} />
 
       <div className="flex-1 flex flex-col items-center justify-center pb-4 px-4 gap-6">
         {/* Crash recovery banner */}

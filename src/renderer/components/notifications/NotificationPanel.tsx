@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, RefObject } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useNotificationStore, NotificationType } from '../../stores/notificationStore'
+import { useNotificationStore, NotificationType, Notification } from '../../stores/notificationStore'
 
 const TYPE_SECTIONS: { type: NotificationType; label: string }[] = [
   { type: 'update', label: 'Updates' },
@@ -22,8 +22,8 @@ function timeAgo(ts: number): string {
   return `${d}d ago`
 }
 
-function groupBySection(items: { type: NotificationType }[]) {
-  const groups = new Map<string, typeof items>()
+function groupBySection(items: Notification[]) {
+  const groups = new Map<string, Notification[]>()
   for (const item of items) {
     const section = TYPE_SECTIONS.find((s) => s.type === item.type)
     const label = section?.label ?? 'Other'
@@ -36,9 +36,10 @@ function groupBySection(items: { type: NotificationType }[]) {
 interface NotificationPanelProps {
   open: boolean
   onClose: () => void
+  bellRef?: RefObject<HTMLButtonElement | null>
 }
 
-export function NotificationPanel({ open, onClose }: NotificationPanelProps) {
+export function NotificationPanel({ open, onClose, bellRef }: NotificationPanelProps) {
   const { items, markAllRead, clear } = useNotificationStore()
   const panelRef = useRef<HTMLDivElement>(null)
 
@@ -47,18 +48,19 @@ export function NotificationPanel({ open, onClose }: NotificationPanelProps) {
     markAllRead()
   }, [open, markAllRead])
 
-  // Close on outside click
+  // Close on outside click (ignore bell button — toggle handles that)
   useEffect(() => {
     if (!open) return
     const handler = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+      const target = e.target as Node
+      if (bellRef?.current?.contains(target)) return
+      if (panelRef.current && !panelRef.current.contains(target)) {
         onClose()
       }
     }
-    // Delay to avoid catching the bell click itself
-    const timer = setTimeout(() => document.addEventListener('mousedown', handler), 10)
-    return () => { clearTimeout(timer); document.removeEventListener('mousedown', handler) }
-  }, [open, onClose])
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open, onClose, bellRef])
 
   // Close on ESC
   useEffect(() => {
@@ -102,32 +104,44 @@ export function NotificationPanel({ open, onClose }: NotificationPanelProps) {
           {/* Content */}
           <div className="flex-1 overflow-auto">
             {items.length === 0 ? (
-              <div className="py-8 text-center">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.15 }}
+                className="py-8 text-center"
+              >
                 <span className="text-gray-600 text-xs">No notifications yet</span>
-              </div>
+              </motion.div>
             ) : (
               Array.from(groups.entries()).map(([label, groupItems]) => (
                 <div key={label}>
                   <div className="px-3 pt-2.5 pb-1">
                     <span className="text-[9px] font-mono text-gray-500 uppercase tracking-wider">{label}</span>
                   </div>
-                  {groupItems.map((item) => (
-                    <div
-                      key={item.type + '-' + (item as any).id}
-                      className={`px-3 py-2 flex items-start gap-2 hover:bg-white/[0.02] transition-colors ${
-                        !(item as any).read ? 'bg-white/[0.02]' : ''
-                      }`}
-                    >
-                      <span className="text-sm shrink-0 mt-0.5">{(item as any).icon}</span>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[11px] text-white leading-snug">{(item as any).title}</p>
-                        <p className="text-[10px] text-gray-500 leading-snug mt-0.5">{(item as any).body}</p>
-                      </div>
-                      <span className="text-[9px] text-gray-600 font-mono shrink-0 mt-0.5">
-                        {timeAgo((item as any).timestamp)}
-                      </span>
-                    </div>
-                  ))}
+                  <AnimatePresence initial={false}>
+                    {groupItems.map((item) => (
+                      <motion.div
+                        key={item.id}
+                        layout
+                        initial={{ opacity: 0, x: 12 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 20, height: 0, marginTop: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, overflow: 'hidden' }}
+                        transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                        className={`px-3 py-2 flex items-start gap-2 hover:bg-white/[0.02] transition-colors ${
+                          !item.read ? 'bg-white/[0.02]' : ''
+                        }`}
+                      >
+                        <span className="text-sm shrink-0 mt-0.5">{item.icon}</span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[11px] text-white leading-snug">{item.title}</p>
+                          <p className="text-[10px] text-gray-500 leading-snug mt-0.5">{item.body}</p>
+                        </div>
+                        <span className="text-[9px] text-gray-600 font-mono shrink-0 mt-0.5">
+                          {timeAgo(item.timestamp)}
+                        </span>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
                 </div>
               ))
             )}

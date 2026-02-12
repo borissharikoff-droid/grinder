@@ -146,6 +146,7 @@ export default function App() {
               <HomePage
                 key="home"
                 onNavigateProfile={handleNavigateProfile}
+                onNavigateFriends={() => setActiveTab('friends')}
               />
             )}
             {activeTab === 'skills' && <SkillsPage key="skills" />}

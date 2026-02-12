@@ -21,7 +21,7 @@ function GrindTimer({ startedAt }: { startedAt: string }) {
 }
 import type { FriendProfile as FriendProfileType } from '../../hooks/useFriends'
 import { FRAMES, BADGES } from '../../lib/cosmetics'
-import { getSkillById, getSkillByName, SKILLS, computeTotalSkillLevelFromLevels } from '../../lib/skills'
+import { getSkillById, getSkillByName, SKILLS, computeTotalSkillLevelFromLevels, MAX_TOTAL_SKILL_LEVEL } from '../../lib/skills'
 import { getPersonaById } from '../../lib/persona'
 import { ACHIEVEMENTS } from '../../lib/xp'
 
@@ -30,6 +30,7 @@ interface FriendProfileProps {
   onBack: () => void
   onCompare?: () => void
   onMessage?: () => void
+  onRemove?: () => void
 }
 
 interface SessionSummary {
@@ -44,10 +45,11 @@ interface FriendSkillRow {
   total_xp: number
 }
 
-export function FriendProfile({ profile, onBack, onCompare, onMessage }: FriendProfileProps) {
+export function FriendProfile({ profile, onBack, onCompare, onMessage, onRemove }: FriendProfileProps) {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [achievements, setAchievements] = useState<string[]>([])
   const [allSkills, setAllSkills] = useState<FriendSkillRow[]>([])
+  const [confirmRemove, setConfirmRemove] = useState(false)
 
   useEffect(() => {
     if (!supabase) return
@@ -128,8 +130,42 @@ export function FriendProfile({ profile, onBack, onCompare, onMessage }: FriendP
               ⚔️ Compare
             </button>
           )}
+          {onRemove && !confirmRemove && (
+            <button
+              onClick={() => setConfirmRemove(true)}
+              className="text-xs px-2 py-1 rounded-full border border-red-500/30 text-red-400 bg-red-500/10 hover:bg-red-500/20 transition-colors"
+              title="Remove friend"
+            >
+              ✕
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Remove confirmation */}
+      {confirmRemove && (
+        <motion.div
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: 'auto' }}
+          className="rounded-xl bg-red-500/10 border border-red-500/20 p-3 flex items-center justify-between"
+        >
+          <span className="text-xs text-red-400">Remove {profile.username || 'this friend'}?</span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setConfirmRemove(false)}
+              className="text-[10px] px-3 py-1 rounded-lg bg-white/5 text-gray-400 hover:text-white transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => { setConfirmRemove(false); onRemove?.() }}
+              className="text-[10px] px-3 py-1 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors font-medium"
+            >
+              Remove
+            </button>
+          </div>
+        </motion.div>
+      )}
 
       {/* Profile Card */}
       <div className="rounded-2xl bg-gradient-to-br from-discord-card/90 to-discord-card/60 border border-white/10 p-5 relative overflow-hidden">
@@ -163,7 +199,7 @@ export function FriendProfile({ profile, onBack, onCompare, onMessage }: FriendP
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-white font-bold text-base truncate">{profile.username || 'Anonymous'}</span>
-              <span className="text-cyber-neon font-mono text-xs" title="Total skill level">{totalSkillLevel}</span>
+              <span className="text-cyber-neon font-mono text-xs" title="Total skill level">{totalSkillLevel}/{MAX_TOTAL_SKILL_LEVEL}</span>
               {persona && (
                 <span className="text-xs px-1.5 py-0.5 rounded border border-white/10 bg-discord-darker/80 text-gray-400" title={persona.description}>
                   {persona.emoji} {persona.label}

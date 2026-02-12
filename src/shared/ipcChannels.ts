@@ -72,6 +72,9 @@ export const IPC_CHANNELS = {
     getLogsPath: 'data:getLogsPath',
     openLogsFolder: 'data:openLogsFolder',
   },
+  window: {
+    flashFrame: 'window:flashFrame',
+  },
   updater: {
     status: 'updater:status',
     install: 'updater:install',
