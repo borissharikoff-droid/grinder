@@ -71,7 +71,7 @@ export function ProfileBar({ onNavigateProfile }: ProfileBarProps) {
   return (
     <div className={`flex flex-col items-center px-4 pt-3 pb-4 transition-opacity duration-150 ${loaded ? 'opacity-100' : 'opacity-0'}`}>
       {/* Top row: avatar + info + sign out — overflow hidden so tooltips don't expand window */}
-      <div className="flex items-center gap-2.5 w-full max-w-[260px] min-w-0">
+      <div className="flex items-center gap-2.5 w-full max-w-[340px] min-w-0">
         {/* Avatar */}
         <button onClick={() => { playClickSound(); onNavigateProfile?.() }} className={`relative shrink-0 ${activeFrame ? `frame-style-${activeFrame.style}` : ''}`} title="Profile">
           {activeFrame && (
@@ -94,7 +94,7 @@ export function ProfileBar({ onNavigateProfile }: ProfileBarProps) {
 
         {/* Name + badges */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center gap-1.5 overflow-hidden">
             <span className="text-white font-medium text-sm leading-none truncate">{username}</span>
 
             <span className="text-cyber-neon font-mono text-[11px] leading-none cursor-default" title="Total skill level">
