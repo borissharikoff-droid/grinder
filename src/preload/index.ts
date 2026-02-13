@@ -69,6 +69,7 @@ const CH = {
     setAutoLaunch: 'settings:setAutoLaunch',
   },
   notify: { show: 'notify:show' },
+  window: { flashFrame: 'window:flashFrame', setBadgeCount: 'window:setBadgeCount' },
   data: { exportSessions: 'data:exportSessions', getLogsPath: 'data:getLogsPath', openLogsFolder: 'data:openLogsFolder' },
   updater: { status: 'updater:status', install: 'updater:install' },
 }
@@ -152,6 +153,10 @@ try {
       setAutoLaunch: (enabled: boolean) => ipcRenderer.invoke(CH.settings.setAutoLaunch, enabled),
     },
     notify: { show: (title: string, body: string) => ipcRenderer.invoke(CH.notify.show, title, body) },
+    window: {
+      flashFrame: () => ipcRenderer.invoke(CH.window.flashFrame),
+      setBadgeCount: (count: number) => ipcRenderer.invoke(CH.window.setBadgeCount, count),
+    },
     data: {
       exportSessions: (format: 'csv' | 'json') => ipcRenderer.invoke(CH.data.exportSessions, format),
       getLogsPath: () => ipcRenderer.invoke(CH.data.getLogsPath),

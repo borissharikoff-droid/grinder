@@ -13,10 +13,13 @@ import { SkillsPage } from './components/skills/SkillsPage'
 import { StreakOverlay } from './components/animations/StreakOverlay'
 import { LootDrop } from './components/alerts/LootDrop'
 import { FriendToasts } from './components/alerts/FriendToasts'
+import { MessageBanner } from './components/alerts/MessageBanner'
 import { SkillLevelUpModal } from './components/home/SkillLevelUpModal'
 import { useFriends } from './hooks/useFriends'
+import { useMessageNotifier } from './hooks/useMessageNotifier'
 import { UpdateBanner } from './components/UpdateBanner'
 import { useSessionStore } from './stores/sessionStore'
+import { useChatTargetStore } from './stores/chatTargetStore'
 import { categoryToSkillId, getSkillById } from './lib/skills'
 import { warmUpAudio } from './lib/sounds'
 
@@ -41,6 +44,7 @@ export default function App() {
   useProfileSync()
   useKeyboardShortcuts()
   useFriends() // run so friend presence polling + online/leveling toasts work on all tabs
+  useMessageNotifier() // sound, taskbar badge, toasts on new messages
 
   // Pre-warm audio context on first user gesture
   useEffect(() => {
@@ -82,6 +86,11 @@ export default function App() {
   }, [])
 
   const handleNavigateProfile = useCallback(() => setActiveTab('profile'), [])
+
+  const handleNavigateToChat = useCallback((friendId: string) => {
+    useChatTargetStore.getState().setFriendId(friendId)
+    setActiveTab('friends')
+  }, [])
 
   // Activity update listener — must live at App level so it works on ALL tabs
   const setCurrentActivity = useSessionStore((s) => s.setCurrentActivity)
@@ -128,6 +137,7 @@ export default function App() {
         </AnimatePresence>
         <LootDrop />
         <FriendToasts />
+        <MessageBanner onNavigateToChat={handleNavigateToChat} />
         <SkillLevelUpModal />
       </div>
     </AuthGate>
