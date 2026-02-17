@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import mascotImg from '../../assets/mascot.png'
+import { MOTION } from '../../lib/motion'
 
 interface WelcomeBannerProps {
   onDismiss: () => void
@@ -18,12 +19,12 @@ export function WelcomeBanner({ onDismiss }: WelcomeBannerProps) {
     <motion.div
       initial={false}
       animate={visible ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0, y: -10, scale: 0.97 }}
-      transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+      transition={{ duration: MOTION.duration.slow, ease: MOTION.easing }}
       className="w-full max-w-xs text-center"
     >
-      <div className="rounded-2xl bg-discord-card/90 border border-[#8b5cf6]/20 px-5 py-4 relative overflow-hidden">
+      <div className="rounded-2xl bg-discord-card/90 border border-discord-purple/20 px-5 py-4 relative overflow-hidden">
         {/* Glow background */}
-        <div className="absolute inset-0 bg-gradient-to-b from-[#8b5cf6]/5 to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-b from-discord-purple/5 to-transparent pointer-events-none" />
 
         <div className="relative">
           <img

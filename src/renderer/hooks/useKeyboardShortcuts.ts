@@ -1,8 +1,13 @@
 import { useEffect } from 'react'
 import { useSessionStore } from '../stores/sessionStore'
 
-export function useKeyboardShortcuts() {
+interface KeyboardShortcutOptions {
+  onEscapeToHome?: () => void
+}
+
+export function useKeyboardShortcuts(options: KeyboardShortcutOptions = {}) {
   const { status, start, stop, pause, resume } = useSessionStore()
+  const { onEscapeToHome } = options
 
   useEffect(() => {
     const enabled = localStorage.getItem('idly_shortcuts_enabled') !== 'false'
@@ -12,6 +17,11 @@ export function useKeyboardShortcuts() {
       // Don't trigger in input fields
       const tag = (e.target as HTMLElement)?.tagName?.toLowerCase()
       if (tag === 'input' || tag === 'textarea' || tag === 'select') return
+
+      if (e.key === 'Escape') {
+        onEscapeToHome?.()
+        return
+      }
 
       // Ctrl+S — Start / Stop session
       if (e.ctrlKey && e.key.toLowerCase() === 's') {
@@ -36,5 +46,5 @@ export function useKeyboardShortcuts() {
 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [status, start, stop, pause, resume])
+  }, [status, start, stop, pause, resume, onEscapeToHome])
 }

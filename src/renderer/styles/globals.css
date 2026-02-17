@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --idly-space-xs: 0.25rem;
+  --idly-space-sm: 0.5rem;
+  --idly-space-md: 0.75rem;
+  --idly-space-lg: 1rem;
+  --idly-radius-sm: 0.5rem;
+  --idly-radius-md: 0.75rem;
+  --idly-radius-lg: 1rem;
+}
+
 * {
   box-sizing: border-box;
   user-select: none;
@@ -18,6 +28,18 @@ body {
   background-color: #11111b;
   color: #e0e0e0;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Keep emoji tab icons stable even while web fonts are swapping in. */
+.idly-tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1em;
+  height: 1.1em;
+  line-height: 1;
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+  font-size: 1.05rem;
 }
 
 ::-webkit-scrollbar {
@@ -39,6 +61,16 @@ body {
 
 input, textarea {
   user-select: auto;
+}
+
+.idly-card {
+  border-radius: var(--idly-radius-lg);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(43, 45, 49, 0.82);
+}
+
+.idly-subtle {
+  color: rgba(255, 255, 255, 0.55);
 }
 
 /* XP System Animations */
@@ -372,4 +404,37 @@ input, textarea {
   inset: -1px;
   border-radius: inherit;
   border: 1px solid rgba(255, 215, 0, 0.15);
+}
+
+/* Shared UI primitives */
+.idly-card-soft {
+  border-radius: var(--idly-radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(43, 45, 49, 0.72);
+}
+
+.idly-badge {
+  font-size: 10px;
+  line-height: 1.3;
+  border-radius: 0.375rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 0.125rem 0.375rem;
+}
+
+.idly-status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  display: inline-block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

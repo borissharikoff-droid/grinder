@@ -105,6 +105,34 @@ describe('categorize', () => {
     expect(categorize('msedge', '')).toBe('browsing')
   })
 
+  it('categorizes Claude Code in browser as coding', () => {
+    expect(categorize('chrome', 'Claude Code - claude.ai')).toBe('coding')
+    expect(categorize('msedge', 'Claude - claude.ai/chat')).toBe('coding')
+    expect(categorize('chrome', 'Code - code.claude.ai/session/123')).toBe('coding')
+  })
+
+  it('categorizes GitHub pages in browser as coding', () => {
+    expect(categorize('chrome', 'Pull Request #123 - github.com')).toBe('coding')
+  })
+
+  it('categorizes browser figma as design', () => {
+    expect(categorize('chrome', 'Figma - Design System - figma.com')).toBe('design')
+  })
+
+  it('categorizes browser social feeds as social', () => {
+    expect(categorize('chrome', 'Home / X - x.com')).toBe('social')
+    expect(categorize('msedge', 'Reddit - Dive into anything')).toBe('social')
+  })
+
+  it('categorizes browser entertainment as other', () => {
+    expect(categorize('chrome', 'Netflix - Watch TV Shows Online')).toBe('other')
+  })
+
+  it('categorizes cloud IDE tabs as coding', () => {
+    expect(categorize('chrome', 'my-repo - GitHub Codespaces')).toBe('coding')
+    expect(categorize('chrome', 'index.ts - StackBlitz')).toBe('coding')
+  })
+
   // Other
   it('categorizes unknown apps as other', () => {
     expect(categorize('randomapp', '')).toBe('other')
@@ -125,6 +153,15 @@ describe('categorizeMultiple', () => {
     const cats = categorizeMultiple('chrome', 'подкаст - Spotify')
     expect(cats).toContain('music')
     expect(cats).toContain('learning')
+  })
+
+  it('prioritizes coding over social when title is mixed', () => {
+    expect(categorize('chrome', 'GitHub issue discussion - github.com')).toBe('coding')
+  })
+
+  it('categorizes lesson/tutorial pages in browser as learning', () => {
+    expect(categorize('chrome', 'React Tutorial for Beginners - YouTube')).toBe('learning')
+    expect(categorize('msedge', 'Lesson 5: Async JavaScript - Course')).toBe('learning')
   })
 
   it('strips .exe suffix from app name', () => {

@@ -1,9 +1,13 @@
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import type { FriendProfile } from '../../hooks/useFriends'
-import { getSkillById, getSkillByName, MAX_TOTAL_SKILL_LEVEL } from '../../lib/skills'
-import { FRAMES, BADGES } from '../../lib/cosmetics'
+import { getSkillByName, MAX_TOTAL_SKILL_LEVEL } from '../../lib/skills'
+import { BADGES } from '../../lib/cosmetics'
+import { LOOT_ITEMS } from '../../lib/loot'
 import { getPersonaById } from '../../lib/persona'
 import { playClickSound } from '../../lib/sounds'
+import { parseFriendPresence, formatSessionDurationCompact } from '../../lib/friendPresence'
+import { AvatarWithFrame } from '../shared/AvatarWithFrame'
 
 interface FriendListProps {
   friends: FriendProfile[]
@@ -15,6 +19,15 @@ interface FriendListProps {
 }
 
 export function FriendList({ friends, onSelectFriend, onMessageFriend, unreadByFriendId = {} }: FriendListProps) {
+  const [nowMs, setNowMs] = useState(() => Date.now())
+
+  useEffect(() => {
+    const hasLiveSessions = friends.some((f) => f.is_online && Boolean(parseFriendPresence(f.current_activity).sessionStartMs))
+    if (!hasLiveSessions) return
+    const t = setInterval(() => setNowMs(Date.now()), 30_000)
+    return () => clearInterval(t)
+  }, [friends])
+
   if (friends.length === 0) {
     return (
       <div className="rounded-xl bg-discord-card/80 border border-white/10 p-6 text-center">
@@ -31,39 +44,46 @@ export function FriendList({ friends, onSelectFriend, onMessageFriend, unreadByF
     return (b.total_skill_level ?? 0) - (a.total_skill_level ?? 0)
   })
 
-  const parseActivity = (raw: string | null): { activityLabel: string; appName: string | null } => {
-    if (!raw) return { activityLabel: '', appName: null }
-    const sep = ' · '
-    const idx = raw.indexOf(sep)
-    if (idx >= 0) {
-      return { activityLabel: raw.slice(0, idx).trim(), appName: raw.slice(idx + sep.length).trim() || null }
+  const formatLastSeen = (iso: string | null | undefined): string => {
+    if (!iso) return 'Last seen recently'
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return 'Last seen recently'
+    const now = new Date()
+    const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
+    if (sameDay) {
+      return `Last seen: ${d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}`
     }
-    return { activityLabel: raw, appName: null }
+    return `Last seen: ${d.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}`
   }
 
   return (
     <div className="space-y-2">
       {sorted.map((f, i) => {
-        const frame = FRAMES.find(fr => fr.id === f.equipped_frame)
         const badges = (f.equipped_badges || [])
           .map(bId => BADGES.find(b => b.id === bId))
           .filter(Boolean)
-        const { activityLabel, appName } = parseActivity(f.current_activity ?? null)
+        const { activityLabel, appName, sessionStartMs } = parseFriendPresence(f.current_activity ?? null)
         const isLeveling = f.is_online && activityLabel.startsWith('Leveling ')
         const levelingSkill = isLeveling ? activityLabel.replace('Leveling ', '') : null
         const persona = getPersonaById(f.persona_id ?? null)
         const unread = unreadByFriendId[f.id] ?? 0
+        const liveDuration = f.is_online && sessionStartMs ? formatSessionDurationCompact(sessionStartMs, nowMs) : null
+        const hasSyncedSkills = f.skills_sync_status === 'synced'
+        const totalSkillDisplay = hasSyncedSkills ? `${f.total_skill_level ?? 0}/${MAX_TOTAL_SKILL_LEVEL}` : '--/--'
+        const equippedLoot = Object.values(f.equipped_loot || {})
+          .map((itemId) => LOOT_ITEMS.find((item) => item.id === itemId))
+          .filter(Boolean)
 
         return (
           <motion.div
             key={f.id}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 0.15 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             className={`w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all ${
               f.is_online
-                ? 'bg-discord-card/90 border-white/10 hover:border-white/20'
-                : 'bg-discord-card/50 border-white/5 opacity-70 hover:opacity-90'
+                ? 'bg-discord-card/90 border-white/10 hover:border-white/20 hover:-translate-y-[1px]'
+                : 'bg-discord-card/50 border-white/5 opacity-70 hover:opacity-90 hover:-translate-y-[1px]'
             }`}
           >
             <button
@@ -73,20 +93,14 @@ export function FriendList({ friends, onSelectFriend, onMessageFriend, unreadByF
             >
             {/* Avatar with frame + online indicator */}
             <div className="relative shrink-0">
-              {frame && (
-                <div
-                  className="absolute -inset-1 rounded-full"
-                  style={{ background: frame.gradient, opacity: 0.7 }}
-                />
-              )}
-              <div
-                className={`relative w-10 h-10 rounded-full flex items-center justify-center text-lg bg-discord-darker ${
-                  frame ? 'border-2' : 'border border-white/10'
-                }`}
-                style={frame ? { borderColor: frame.color } : undefined}
-              >
-                {f.avatar_url || '🤖'}
-              </div>
+              <AvatarWithFrame
+                avatar={f.avatar_url || '🤖'}
+                frameId={f.equipped_frame}
+                sizeClass="w-10 h-10"
+                textClass="text-lg"
+                roundedClass="rounded-full"
+                ringInsetClass="-inset-1"
+              />
               {/* Online indicator */}
               <span className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-discord-card ${
                 f.is_online ? 'bg-cyber-neon' : 'bg-gray-600'
@@ -97,13 +111,20 @@ export function FriendList({ friends, onSelectFriend, onMessageFriend, unreadByF
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5 mb-0.5">
                 <span className="text-sm font-semibold text-white truncate">{f.username || 'Anonymous'}</span>
-                <span className="text-[10px] text-cyber-neon font-mono shrink-0" title="Total skill level">{(f.total_skill_level ?? 0)}/{MAX_TOTAL_SKILL_LEVEL}</span>
+                <span className="text-[10px] text-cyber-neon font-mono shrink-0" title={hasSyncedSkills ? 'Total skill level' : 'Skill sync pending'}>
+                  {totalSkillDisplay}
+                </span>
                 {f.streak_count > 0 && (
                   <span className="text-[10px] text-orange-400 font-mono shrink-0" title="Streak">🔥{f.streak_count}d</span>
                 )}
                 {persona && (
                   <span className="text-[9px] px-1 py-0.5 rounded border border-white/10 bg-discord-darker/80 text-gray-400 shrink-0" title={persona.label}>
                     {persona.emoji}
+                  </span>
+                )}
+                {f.status_title && (
+                  <span className="text-[9px] px-1 py-0.5 rounded border border-cyber-neon/25 bg-cyber-neon/10 text-cyber-neon shrink-0" title="Status title">
+                    {f.status_title}
                   </span>
                 )}
                 {/* Equipped badges */}
@@ -117,6 +138,15 @@ export function FriendList({ friends, onSelectFriend, onMessageFriend, unreadByF
                     {badge.icon}
                   </span>
                 ))}
+                {equippedLoot.map((item) => item && (
+                  <span
+                    key={item.id}
+                    className="text-[9px] px-1 py-0.5 rounded border border-cyber-neon/20 bg-cyber-neon/8 text-cyber-neon shrink-0"
+                    title={item.name}
+                  >
+                    {item.icon}
+                  </span>
+                ))}
               </div>
 
               {/* Status line */}
@@ -128,7 +158,7 @@ export function FriendList({ friends, onSelectFriend, onMessageFriend, unreadByF
                       return (
                         <span className="text-[11px] text-gray-400 font-medium flex items-center gap-1.5">
                           {skill?.icon && <span className="text-sm">{skill.icon}</span>}
-                          Leveling {levelingSkill}
+                          Leveling {levelingSkill}{liveDuration ? ` • ${liveDuration}` : ''}
                         </span>
                       )
                     })() : activityLabel ? (
@@ -137,34 +167,16 @@ export function FriendList({ friends, onSelectFriend, onMessageFriend, unreadByF
                       <span className="text-[11px] text-gray-400">Online</span>
                     )
                   ) : (
-                    <span className="text-[11px] text-gray-600">Offline</span>
+                    <span className="text-[11px] text-gray-600">{formatLastSeen(f.last_seen_at)}</span>
                   )}
                 </div>
                 {f.is_online && appName && (
-                  <span className="text-[10px] text-gray-500 truncate">in {appName}</span>
+                  <span className="text-[10px] text-gray-500 truncate">
+                    Playing: {appName}{liveDuration ? ` • session ${liveDuration}` : ''}
+                  </span>
                 )}
               </div>
 
-              {/* Top skills */}
-              {f.top_skills && f.top_skills.length > 0 && (
-                <div className="flex gap-1 mt-1 flex-wrap">
-                  {f.top_skills.map((s) => {
-                    const skill = getSkillById(s.skill_id)
-                    if (!skill) return null
-                    return (
-                      <span
-                        key={s.skill_id}
-                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px]"
-                        style={{ backgroundColor: `${skill.color}15`, color: skill.color, border: `1px solid ${skill.color}25` }}
-                        title={`${skill.name} Lv.${s.level}`}
-                      >
-                        <span>{skill.icon}</span>
-                        <span className="font-mono">{s.level}</span>
-                      </span>
-                    )
-                  })}
-                </div>
-              )}
             </div>
             </button>
 

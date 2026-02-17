@@ -1,9 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../stores/authStore'
 import { useNavBadgeStore } from '../stores/navBadgeStore'
 import { useMessageToastStore } from '../stores/messageToastStore'
-import { useNotificationStore } from '../stores/notificationStore'
 import { playMessageSound } from '../lib/sounds'
 
 /**
@@ -15,7 +14,6 @@ export function useMessageNotifier() {
   const { user } = useAuthStore()
   const { addUnreadMessages, setUnreadMessagesCount } = useNavBadgeStore()
   const unreadMessagesCount = useNavBadgeStore((s) => s.unreadMessagesCount)
-  const initialized = useRef(false)
 
   // Sync taskbar badge whenever unread count changes (like Telegram)
   useEffect(() => {
@@ -62,29 +60,29 @@ export function useMessageNotifier() {
             window.electronAPI?.window?.flashFrame?.()
           } catch {}
           const preview = row.body.length > 30 ? row.body.slice(0, 30) + '...' : row.body
-          // Push to MessageBanner immediately so it shows at top of screen
-          useMessageToastStore.getState().push({
-            senderId: row.sender_id,
-            senderName: 'Friend',
-            senderAvatar: '💬',
-            preview,
-          })
-          // Fetch sender profile and update system notifications
+          // Fetch sender profile and push single message surface (top banner queue)
           supabase.from('profiles').select('username, avatar_url').eq('id', row.sender_id).single().then(({ data: profile }) => {
             const name = profile?.username?.trim() || 'Friend'
             const avatar = profile?.avatar_url || '💬'
-            try {
-              useNotificationStore.getState().push({ type: 'message', icon: avatar, title: name, body: preview })
-            } catch {}
-            // Note: MessageBanner already showed with "Friend" - we could update but banner is per-message, next one will have correct name
+            useMessageToastStore.getState().push({
+              senderId: row.sender_id,
+              senderName: name,
+              senderAvatar: avatar,
+              preview,
+            })
+          }).catch(() => {
+            useMessageToastStore.getState().push({
+              senderId: row.sender_id,
+              senderName: 'Friend',
+              senderAvatar: '💬',
+              preview,
+            })
           })
         }
       )
       .subscribe()
-    initialized.current = true
     return () => {
       supabase.removeChannel(channel)
-      initialized.current = false
     }
   }, [user?.id, addUnreadMessages])
 }

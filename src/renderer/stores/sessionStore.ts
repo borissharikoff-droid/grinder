@@ -5,8 +5,17 @@ import { computeAndSaveSkillXPElectron, computeAndSaveSkillXPBrowser } from '../
 import { processAchievementsElectron } from '../services/achievementService'
 import { syncSkillsToSupabase, syncSessionToSupabase } from '../services/supabaseSync'
 import { useAlertStore } from './alertStore'
-import { getAchievementById, levelFromTotalXP, getRewardsInRange, LevelReward, CATEGORY_XP_MULTIPLIER } from '../lib/xp'
-import { categoryToSkillId, skillLevelFromXP } from '../lib/skills'
+import { useSkillSyncStore } from './skillSyncStore'
+import { getAchievementById, LevelReward } from '../lib/xp'
+import { skillLevelFromXP } from '../lib/skills'
+import { appendProgressionHistory } from '../lib/progressionHistory'
+import { buildFocusTickEvent, computeSkillXpForCategories, makeProgressionEvent, type ProgressionEvent } from '../lib/progressionContract'
+import { routeNotification } from '../services/notificationRouter'
+import { generateSessionCoach, type SessionCoachSummary } from '../lib/sessionCoach'
+import { publishSocialFeedEvent } from '../services/socialFeed'
+import { ensureInventoryHydrated, useInventoryStore } from './inventoryStore'
+import { recordDeveloperXp, recordFocusSeconds, recordSessionWithoutAfk } from '../services/dailyActivityService'
+import { useChestDropStore } from './chestDropStore'
 
 type SessionStatus = 'idle' | 'running' | 'paused'
 
@@ -31,7 +40,7 @@ interface SessionStore {
   elapsedSeconds: number
   currentActivity: ActivitySnapshot | null
   showComplete: boolean
-  lastSessionSummary: { durationFormatted: string } | null
+  lastSessionSummary: { durationFormatted: string; coach?: SessionCoachSummary } | null
   sessionId: string | null
   sessionStartTime: number | null
   newAchievements: { id: string; name: string; description: string; xpReward: number }[]
@@ -39,18 +48,16 @@ interface SessionStore {
   skillXPGains: SkillXPGain[]
   /** Whether the session is paused due to AFK */
   isAfkPaused: boolean
+  /** Becomes true if AFK pause happened at least once in this session */
+  wasAfkPausedThisSession: boolean
   /** Streak multiplier for this session (1.0 - 2.0) */
   streakMultiplier: number
-  /** Total XP earned this session (with multiplier applied) */
-  sessionXPEarned: number
-  /** Live XP accumulated this session (for real-time display) */
-  liveXP: number
-  /** Queue of floating +XP popups */
-  xpPopups: { id: string; amount: number }[]
-  /** Level at start of session (for level-up detection) */
-  levelBefore: number
+  /** Total skill XP earned this session */
+  sessionSkillXPEarned: number
   /** Pending level-up info to show modal */
   pendingLevelUp: { level: number; rewards: LevelReward[] } | null
+  /** Captured progression reason events in latest session */
+  progressionEvents: ProgressionEvent[]
   /** All rewards unlocked during this session */
   sessionRewards: LevelReward[]
   /** XP per skill this session (for live display during grind; 1 per second in current category) */
@@ -69,7 +76,7 @@ interface SessionStore {
   resume: () => void
   setCurrentActivity: (a: ActivitySnapshot | null) => void
   setShowComplete: (v: boolean) => void
-  setLastSessionSummary: (s: { durationFormatted: string } | null) => void
+  setLastSessionSummary: (s: { durationFormatted: string; coach?: SessionCoachSummary } | null) => void
   dismissComplete: () => void
   dismissLevelUp: () => void
   checkStreakOnMount: () => Promise<number>
@@ -90,6 +97,14 @@ let pausedAccumulated = 0 // ms accumulated while paused
 let _streakDoneThisSession = false
 let pauseStartedAt = 0    // timestamp when current pause started
 let lastXpTickTime = 0    // timestamp of last XP tick
+let lastStableActivityAt = 0
+
+function isTransientUnknownActivity(a: ActivitySnapshot | null): boolean {
+  if (!a) return true
+  if (a.appName === 'Unknown') return true
+  if (a.windowTitle === 'Searching 4 window...') return true
+  return false
+}
 
 // ── AFK auto-pause listener setup ──
 let afkUnsubscribe: (() => void) | null = null
@@ -98,13 +113,14 @@ let afkUnsubscribe: (() => void) | null = null
 function startCheckpointSaving() {
   stopCheckpointSaving()
   checkpointInterval = setInterval(() => {
-    const { sessionId, sessionStartTime, elapsedSeconds, status } = useSessionStore.getState()
+    const { sessionId, sessionStartTime, elapsedSeconds, status, sessionSkillXP } = useSessionStore.getState()
     if (status !== 'idle' && sessionId && sessionStartTime && window.electronAPI?.db?.saveCheckpoint) {
       window.electronAPI.db.saveCheckpoint({
         sessionId,
         startTime: sessionStartTime,
         elapsedSeconds,
         pausedAccumulated,
+        sessionSkillXP,
       }).catch(() => { })
     }
   }, 30_000) // every 30 seconds
@@ -127,7 +143,7 @@ function setupAfkListener() {
     const { status } = useSessionStore.getState()
     if (idle && status === 'running') {
       useSessionStore.getState().pause()
-      useSessionStore.setState({ isAfkPaused: true })
+      useSessionStore.setState({ isAfkPaused: true, wasAfkPausedThisSession: true })
     } else if (!idle && useSessionStore.getState().isAfkPaused) {
       useSessionStore.getState().resume()
       useSessionStore.setState({ isAfkPaused: false })
@@ -152,12 +168,15 @@ function showAchievementAlerts(
       const def = getAchievementById(a.id)
       if (def) useAlertStore.getState().push(def)
     }
-    // Native notifications
-    const notifEnabled = localStorage.getItem('idly_notifications_enabled') !== 'false'
-    if (notifEnabled && api?.notify) {
-      for (const a of newAch) {
-        api.notify.show('Achievement Unlocked!', `${a.name} — ${a.description}`)
-      }
+    for (const a of newAch) {
+      routeNotification({
+        type: 'progression_achievement',
+        icon: '🏅',
+        title: 'Achievement unlocked',
+        body: `${a.name} — ${a.description}`,
+        dedupeKey: `achievement:${a.id}`,
+        desktop: true,
+      }, api).catch(() => {})
     }
   } else {
     playSessionCompleteSound()
@@ -165,19 +184,25 @@ function showAchievementAlerts(
 }
 
 function sendStreakNotification(api: NonNullable<Window['electronAPI']>): void {
-  const notifEnabled = localStorage.getItem('idly_notifications_enabled') !== 'false'
-  if (!notifEnabled || !api.db?.getStreak || !api.notify) return
+  if (!api.db?.getStreak) return
   api.db.getStreak().then((streak: number) => {
     if (streak > 0 && streak % 7 === 0) {
-      api.notify.show('Streak Milestone!', `You're on a ${streak}-day streak! Keep going!`)
+      routeNotification({
+        type: 'progression_achievement',
+        icon: '🔥',
+        title: 'Streak milestone',
+        body: `You're on a ${streak}-day streak! Keep going!`,
+        dedupeKey: `streak-milestone:${streak}`,
+        desktop: true,
+      }, api).catch(() => {})
     }
   })
 }
 
 // ── Real-Time XP Tick Constants ──
-const XP_TICK_INTERVAL_MS = 30_000 // 30 seconds
+const XP_TICK_INTERVAL_MS = 30_000
 
-// ── XP Tick Functions ──
+// ── Progression Tick Functions (skill-only model) ──
 function startXpTicking() {
   stopXpTicking()
   lastXpTickTime = Date.now()
@@ -197,52 +222,30 @@ function startXpTicking() {
     // All active categories give XP; idle does not
     const cats = (currentActivity?.categories || [currentActivity?.category || 'other']).filter((c: string) => c !== 'idle')
     if (cats.length === 0) return
-    // Sum XP rates across all active categories
-    let totalRate = 0
-    for (const cat of cats) {
-      totalRate += CATEGORY_XP_MULTIPLIER[cat] ?? 0.5
-    }
-    const xpEarned = Math.round((tickDurationMs / 60_000) * totalRate)
-
-    if (xpEarned <= 0) return
-
-    // Get current total XP to check for level up
-    const api = window.electronAPI
-    let prevTotalXP = 0
-    if (api?.db?.getLocalStat) {
-      const xpStr = await api.db.getLocalStat('total_xp')
-      prevTotalXP = parseInt(xpStr || '0', 10)
-    }
-    const prevLevel = levelFromTotalXP(prevTotalXP)
-
-    // Update live XP in store
-    const { liveXP, sessionRewards } = useSessionStore.getState()
-    const newLiveXP = liveXP + xpEarned
-    const newTotalXP = prevTotalXP + xpEarned
-    const newLevel = levelFromTotalXP(newTotalXP)
-
-    // Save incremental XP to DB
-    if (api?.db?.setLocalStat) {
-      await api.db.setLocalStat('total_xp', String(newTotalXP))
-    }
-
-    // Add popup — on grind page show reduced amount for pixel display ("кратно меньше")
-    const popupId = crypto.randomUUID()
-    const popupAmount = Math.max(1, Math.floor(xpEarned / 4))
-    const newPopup = { id: popupId, amount: popupAmount }
-
-    // No global level-up modal; we only use skill levels now
+    const event = buildFocusTickEvent(cats, tickDurationMs / 1000)
+    const totalSkillDelta = Object.values(event.skillXpDelta).reduce((sum, value) => sum + value, 0)
+    if (totalSkillDelta <= 0) return
+    recordFocusSeconds(Math.floor(tickDurationMs / 1000))
+    recordDeveloperXp(event.skillXpDelta.developer ?? 0)
+    const reasonEvent = makeProgressionEvent({
+      ...event,
+      title: 'Focus Skill XP',
+      description: `+${totalSkillDelta} skill XP from ${cats.join(' + ')}`,
+    })
+    appendProgressionHistory(reasonEvent)
     useSessionStore.setState({
-      liveXP: newLiveXP,
-      xpPopups: [...useSessionStore.getState().xpPopups, newPopup],
+      progressionEvents: [reasonEvent, ...useSessionStore.getState().progressionEvents].slice(0, 80),
     })
 
-    // Auto-remove popup after 2 seconds
-    setTimeout(() => {
-      useSessionStore.setState({
-        xpPopups: useSessionStore.getState().xpPopups.filter(p => p.id !== popupId),
-      })
-    }, 2000)
+    ensureInventoryHydrated()
+    const focusCategory = cats.includes('coding') ? 'coding' : cats[0]
+    const reward = useInventoryStore.getState().rollSkillGrindDrop(
+      { source: 'skill_grind', focusCategory },
+      Math.floor(tickDurationMs / 1000),
+    )
+    if (reward) {
+      useChestDropStore.getState().enqueue(reward.id, reward.chestType)
+    }
   }, XP_TICK_INTERVAL_MS)
 }
 
@@ -264,12 +267,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   newAchievements: [],
   skillXPGains: [],
   isAfkPaused: false,
+  wasAfkPausedThisSession: false,
   streakMultiplier: 1.0,
-  sessionXPEarned: 0,
-  liveXP: 0,
-  xpPopups: [],
-  levelBefore: 1,
+  sessionSkillXPEarned: 0,
   pendingLevelUp: null,
+  progressionEvents: [],
   sessionRewards: [],
   sessionSkillXP: {},
   skillXPAtStart: {},
@@ -296,9 +298,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         let newNotified = skillLevelNotified
         // Only queue a new level-up if the modal is not already showing
         const { pendingSkillLevelUpSkill: currentPending } = get()
-        for (const cat of cats) {
-          const skillId = categoryToSkillId(cat)
-          newSessionXP[skillId] = (newSessionXP[skillId] ?? 0) + 1
+        const skillDelta = computeSkillXpForCategories(cats, 1)
+        for (const [skillId, delta] of Object.entries(skillDelta)) {
+          if (delta <= 0) continue
+          newSessionXP[skillId] = (newSessionXP[skillId] ?? 0) + delta
           const baseXP = skillXPAtStart[skillId] ?? 0
           const currentXP = baseXP + (newSessionXP[skillId] ?? 0)
           const currentLevel = skillLevelFromXP(currentXP)
@@ -308,6 +311,18 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
             // Only set pending if no modal is currently open
             if (!currentPending) {
               updates.pendingSkillLevelUpSkill = { skillId, level: currentLevel }
+              routeNotification({
+                type: 'progression_level_up',
+                icon: '⬆️',
+                title: `${skillId} leveled up`,
+                body: `Reached Lv.${currentLevel}`,
+                dedupeKey: `skill-level:${skillId}:${currentLevel}`,
+                desktop: true,
+              }, window.electronAPI || null).catch(() => {})
+              publishSocialFeedEvent('skill_level_up', {
+                skillId,
+                level: currentLevel,
+              }, { dedupeKey: `skill:${skillId}:${currentLevel}` }).catch(() => {})
             }
           }
         }
@@ -329,14 +344,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     pausedAccumulated = 0
     pauseStartedAt = 0
 
-    // Get current level for level-up detection
-    let levelBefore = 1
     const api = typeof window !== 'undefined' ? window.electronAPI : null
-    if (api?.db?.getLocalStat) {
-      const xpStr = await api.db.getLocalStat('total_xp')
-      const totalXP = parseInt(xpStr || '0', 10)
-      levelBefore = levelFromTotalXP(totalXP)
-    }
 
     let skillXPAtStart: Record<string, number> = {}
     if (api?.db?.getAllSkillXP) {
@@ -354,10 +362,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       sessionId,
       sessionStartTime,
       isAfkPaused: false,
-      liveXP: 0,
-      xpPopups: [],
-      levelBefore,
+      wasAfkPausedThisSession: false,
+      sessionSkillXPEarned: 0,
       pendingLevelUp: null,
+      progressionEvents: [],
       sessionRewards: [],
       sessionSkillXP: {},
       skillXPAtStart,
@@ -393,12 +401,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     stopCheckpointSaving()
     stopXpTicking()
     playSessionStopSound()
-    const { sessionId, sessionStartTime, elapsedSeconds } = get()
+    const { sessionId, sessionStartTime, elapsedSeconds, wasAfkPausedThisSession } = get()
     set({ status: 'idle', pendingSkillLevelUpSkill: null })
     const api = typeof window !== 'undefined' ? window.electronAPI : null
     const endTime = Date.now()
 
-    // Clear checkpoint since session is ending normally
+    // Clear checkpoint since session is ending normally.
+    // We do it twice (start + end) to avoid race with an in-flight autosave tick.
     api?.db?.clearCheckpoint?.().catch(() => { })
 
     if (api && sessionId && sessionStartTime) {
@@ -412,15 +421,33 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       )
       set({ skillXPGains })
 
-      // Sync skills to Supabase (fire-and-forget)
-      syncSkillsToSupabase(api).catch(() => { })
+      // Sync skills to Supabase with explicit status state
+      useSkillSyncStore.getState().setSyncState({ status: 'syncing' })
+      syncSkillsToSupabase(api, { maxAttempts: 3 })
+        .then((result) => {
+          if (result.ok) {
+            useSkillSyncStore.getState().setSyncState({ status: 'success', at: result.lastSkillSyncAt })
+            return
+          }
+          useSkillSyncStore.getState().setSyncState({
+            status: 'error',
+            error: result.error ?? 'Skill sync failed',
+          })
+        })
+        .catch((err) => {
+          useSkillSyncStore.getState().setSyncState({
+            status: 'error',
+            error: err instanceof Error ? err.message : String(err),
+          })
+        })
 
       // Achievements & XP
       const result = await processAchievementsElectron(api, sessionId)
       if (result) {
         set({
           streakMultiplier: result.streakMultiplier,
-          sessionXPEarned: result.sessionXPEarned,
+          sessionSkillXPEarned: result.sessionSkillXPEarned,
+          progressionEvents: [...result.progressionEvents, ...get().progressionEvents].slice(0, 80),
         })
         if (result.newAchievements.length > 0) {
           set({
@@ -446,8 +473,25 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     if (sessionId && sessionStartTime) {
       syncSessionToSupabase(sessionStartTime, endTime, elapsedSeconds).catch(() => { })
     }
+    recordSessionWithoutAfk(!wasAfkPausedThisSession && elapsedSeconds >= 20 * 60)
 
     const durationFormatted = formatDuration(get().elapsedSeconds)
+    const coach = api && sessionId && sessionStartTime
+      ? generateSessionCoach((await api.db.getActivitiesBySessionId(sessionId) as Array<{
+          category: string
+          app_name?: string
+          appName?: string
+          start_time?: number
+          end_time?: number
+          startTime?: number
+          endTime?: number
+        }> || []).map((a) => ({
+          category: a.category,
+          appName: (a.app_name || a.appName || ''),
+          startTime: a.start_time ?? a.startTime ?? sessionStartTime,
+          endTime: a.end_time ?? a.endTime ?? endTime,
+        })))
+      : null
 
     // Achievement alerts & sounds
     showAchievementAlerts(get().newAchievements, api)
@@ -457,10 +501,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
     set({
       showComplete: true,
-      lastSessionSummary: { durationFormatted },
+      lastSessionSummary: { durationFormatted, ...(coach ? { coach } : {}) },
       sessionId: null,
       sessionStartTime: null,
     })
+    api?.db?.clearCheckpoint?.().catch(() => { })
   },
 
   pause() {
@@ -493,6 +538,17 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   setCurrentActivity(a) {
+    const now = Date.now()
+    const status = get().status
+
+    // Smooth tracker jitter: briefly keep last known activity instead of
+    // instantly switching to Unknown/Searching between regular updates.
+    if (isTransientUnknownActivity(a) && status === 'running') {
+      if (now - lastStableActivityAt < 2200) return
+    } else if (a && a.appName !== 'Window detector error') {
+      lastStableActivityAt = now
+    }
+
     set({ currentActivity: a })
   },
 
@@ -505,7 +561,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   dismissComplete() {
-    set({ showComplete: false, lastSessionSummary: null, newAchievements: [], skillXPGains: [], streakMultiplier: 1.0, sessionXPEarned: 0, liveXP: 0, xpPopups: [], levelBefore: 1, pendingLevelUp: null, sessionRewards: [] })
+    set({ showComplete: false, lastSessionSummary: null, newAchievements: [], skillXPGains: [], streakMultiplier: 1.0, sessionSkillXPEarned: 0, pendingLevelUp: null, progressionEvents: [], sessionRewards: [] })
   },
 
   dismissLevelUp() {
@@ -585,8 +641,21 @@ declare global {
         addSkillXPLog: (skillId: string, xpDelta: number) => Promise<void>
         getSkillXPHistory: (skillId: string) => Promise<{ date: string; xp: number }[]>
         // Session Checkpoint (crash recovery)
-        saveCheckpoint: (data: { sessionId: string; startTime: number; elapsedSeconds: number; pausedAccumulated: number }) => Promise<void>
-        getCheckpoint: () => Promise<{ session_id: string; start_time: number; elapsed_seconds: number; paused_accumulated: number; updated_at: number } | null>
+        saveCheckpoint: (data: {
+          sessionId: string
+          startTime: number
+          elapsedSeconds: number
+          pausedAccumulated: number
+          sessionSkillXP?: Record<string, number>
+        }) => Promise<void>
+        getCheckpoint: () => Promise<{
+          session_id: string
+          start_time: number
+          elapsed_seconds: number
+          paused_accumulated: number
+          updated_at: number
+          session_skill_xp: string | null
+        } | null>
         clearCheckpoint: () => Promise<void>
       }
       ai: {
@@ -599,6 +668,7 @@ declare global {
       }
       notify: {
         show: (title: string, body: string) => Promise<void>
+        onSmart?: (cb: (payload: { title: string; body: string }) => void) => () => void
       }
       data: {
         exportSessions: (format: 'csv' | 'json') => Promise<string | null>

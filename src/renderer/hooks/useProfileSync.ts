@@ -4,11 +4,17 @@ import { useAuthStore } from '../stores/authStore'
 import { computeTotalSkillLevel } from '../lib/skills'
 import { getEquippedBadges, getEquippedFrame } from '../lib/cosmetics'
 import { detectPersona } from '../lib/persona'
-import { syncSkillsToSupabase } from '../services/supabaseSync'
+import { syncCosmeticsToSupabase, syncSkillsToSupabase } from '../services/supabaseSync'
+import { useSkillSyncStore } from '../stores/skillSyncStore'
+import { buildPresenceActivity } from '../lib/friendPresence'
+import { ensureInventoryHydrated, useInventoryStore } from '../stores/inventoryStore'
+import { getEquippedPerkRuntime } from '../lib/loot'
 
 export function useProfileSync() {
   const { user } = useAuthStore()
   const intervalRef = useRef<ReturnType<typeof setInterval>>()
+  const lastSkillSyncAttemptRef = useRef(0)
+  const setSyncState = useSkillSyncStore((s) => s.setSyncState)
 
   useEffect(() => {
     if (!supabase || !user) return
@@ -35,38 +41,94 @@ export function useProfileSync() {
         personaId = detectPersona(cats || []).id
       }
 
-      // Sync total skill level, streak, persona
-      await supabase.from('profiles').update({
+      // Sync required profile fields first. Optional columns should never block this.
+      const { error: baseProfileError } = await supabase.from('profiles').update({
         level: totalSkillLevel,
         streak_count: streak,
-        ...(personaId != null && { persona_id: personaId }),
         updated_at: new Date().toISOString(),
       }).eq('id', user.id)
+      if (baseProfileError) {
+        console.warn('[useProfileSync] profiles base sync failed:', baseProfileError.message)
+      }
+
+      // Optional persona sync (column may not exist in older schema)
+      if (personaId != null) {
+        const { error: personaError } = await supabase
+          .from('profiles')
+          .update({ persona_id: personaId, updated_at: new Date().toISOString() })
+          .eq('id', user.id)
+        if (personaError) {
+          // Optional field in some deployments
+        }
+      }
 
       // Cosmetics sync — columns may not exist yet in Supabase, so try separately
-      try {
-        await supabase.from('profiles').update({
-          equipped_badges: equippedBadges,
-          equipped_frame: equippedFrame,
-        }).eq('id', user.id)
-      } catch {
-        // Columns may not exist yet — safe to ignore
+      ensureInventoryHydrated()
+      const equippedLoot = useInventoryStore.getState().equippedBySlot
+      const perk = getEquippedPerkRuntime(equippedLoot)
+      syncCosmeticsToSupabase(equippedBadges, equippedFrame, {
+        equippedLoot: equippedLoot as Record<string, string>,
+        statusTitle: perk.statusTitle,
+      }).catch(() => {})
+
+      // Periodic safety sync for per-skill levels (keeps friends view correct even
+      // if a previous sync failed due to temporary network/schema mismatch).
+      if (api?.db?.getAllSkillXP) {
+        const now = Date.now()
+        const RETRY_EVERY_MS = 5 * 60 * 1000
+        if (now - lastSkillSyncAttemptRef.current >= RETRY_EVERY_MS) {
+          lastSkillSyncAttemptRef.current = now
+          setSyncState({ status: 'syncing' })
+          syncSkillsToSupabase(api, { maxAttempts: 3 })
+            .then((result) => {
+              if (result.ok) {
+                setSyncState({ status: 'success', at: result.lastSkillSyncAt })
+                return
+              }
+              setSyncState({ status: 'error', error: result.error ?? 'Skill sync failed' })
+            })
+            .catch((err) => {
+              setSyncState({
+                status: 'error',
+                error: err instanceof Error ? err.message : String(err),
+              })
+            })
+        }
       }
     }
 
     sync()
     // Sync local skill XP to user_skills so friends/leaderboard show real levels
     if (window.electronAPI?.db?.getAllSkillXP) {
-      syncSkillsToSupabase(window.electronAPI).catch(() => {})
+      setSyncState({ status: 'syncing' })
+      syncSkillsToSupabase(window.electronAPI, { maxAttempts: 3 })
+        .then((result) => {
+          if (result.ok) {
+            setSyncState({ status: 'success', at: result.lastSkillSyncAt })
+            return
+          }
+          setSyncState({ status: 'error', error: result.error ?? 'Skill sync failed' })
+        })
+        .catch((err) => {
+          setSyncState({
+            status: 'error',
+            error: err instanceof Error ? err.message : String(err),
+          })
+        })
     }
     intervalRef.current = setInterval(sync, 60000)
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
     }
-  }, [user])
+  }, [user, setSyncState])
 }
 
-export function usePresenceSync(presenceLabel: string | null, isSessionActive: boolean, appName: string | null) {
+export function usePresenceSync(
+  presenceLabel: string | null,
+  isSessionActive: boolean,
+  appName: string | null,
+  sessionStartTime: number | null,
+) {
   const { user } = useAuthStore()
 
   // Set online on mount, offline on unmount
@@ -87,21 +149,14 @@ export function usePresenceSync(presenceLabel: string | null, isSessionActive: b
     }
   }, [user])
 
-  // Update current activity: "Leveling X" or "Leveling X · AppName" or just "AppName"
+  // Update current activity with optional session start metadata.
   useEffect(() => {
     if (!supabase || !user) return
-    let activity: string | null = null
-    if (isSessionActive) {
-      if (presenceLabel) {
-        activity = appName ? `${presenceLabel} · ${appName}` : presenceLabel
-      } else if (appName) {
-        activity = appName
-      }
-    }
+    const activity = buildPresenceActivity(presenceLabel, isSessionActive, appName, sessionStartTime)
     supabase.from('profiles').update({
       current_activity: activity,
       is_online: true,
       updated_at: new Date().toISOString(),
     }).eq('id', user.id).then(() => {})
-  }, [user, presenceLabel, isSessionActive, appName])
+  }, [user, presenceLabel, isSessionActive, appName, sessionStartTime])
 }

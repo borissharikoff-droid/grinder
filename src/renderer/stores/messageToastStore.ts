@@ -15,7 +15,17 @@ interface MessageToastStore {
 
 export const useMessageToastStore = create<MessageToastStore>((set) => ({
   queue: [],
-  push: (toast) => set((s) => ({ queue: [...s.queue, toast] })),
+  push: (toast) =>
+    set((s) => {
+      const last = s.queue[s.queue.length - 1]
+      const deduped =
+        last &&
+        last.senderId === toast.senderId &&
+        last.preview === toast.preview
+          ? s.queue
+          : [...s.queue, toast]
+      return { queue: deduped.slice(-20) }
+    }),
   shift: () => {
     let item: MessageToast | undefined
     set((s) => {

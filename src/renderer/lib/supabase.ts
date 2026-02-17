@@ -4,6 +4,7 @@ const url = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
 export const supabase = url && anonKey ? createClient(url, anonKey) : null
+export const isSupabaseConfigured = Boolean(url && anonKey)
 
 export interface Profile {
   id: string
@@ -14,6 +15,8 @@ export interface Profile {
   current_activity: string | null
   is_online: boolean
   streak_count: number
+  equipped_badges?: string[] | null
+  equipped_frame?: string | null
   updated_at: string
 }
 

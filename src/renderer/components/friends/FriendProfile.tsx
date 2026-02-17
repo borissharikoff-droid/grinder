@@ -1,11 +1,17 @@
-import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState, useEffect, useMemo } from 'react'
+import { motion } from 'framer-motion'
 import { supabase } from '../../lib/supabase'
 import type { FriendProfile as FriendProfileType } from '../../hooks/useFriends'
 import { FRAMES, BADGES } from '../../lib/cosmetics'
-import { getSkillById, getSkillByName, SKILLS, computeTotalSkillLevelFromLevels, MAX_TOTAL_SKILL_LEVEL, normalizeSkillId, skillLevelFromXP, skillXPProgress } from '../../lib/skills'
+import { LOOT_ITEMS, type LootSlot } from '../../lib/loot'
+import { getSkillByName, SKILLS, computeTotalSkillLevelFromLevels, MAX_TOTAL_SKILL_LEVEL, normalizeSkillId, skillLevelFromXP, skillXPProgress } from '../../lib/skills'
 import { getPersonaById } from '../../lib/persona'
-import { ACHIEVEMENTS } from '../../lib/xp'
+import { ACHIEVEMENTS, checkSkillAchievements } from '../../lib/xp'
+import { MOTION } from '../../lib/motion'
+import { formatSessionDurationCompact, parseFriendPresence } from '../../lib/friendPresence'
+import { PageHeader } from '../shared/PageHeader'
+import { fetchUserPublicProgressHistory, type SocialFeedEvent } from '../../services/socialFeed'
+import { AvatarWithFrame } from '../shared/AvatarWithFrame'
 
 interface FriendProfileProps {
   profile: FriendProfileType
@@ -13,6 +19,7 @@ interface FriendProfileProps {
   onCompare?: () => void
   onMessage?: () => void
   onRemove?: () => void
+  onRetrySync?: () => void
 }
 
 interface SessionSummary {
@@ -27,92 +34,164 @@ interface FriendSkillRow {
   total_xp: number
 }
 
+const FRIEND_LOOT_SLOT_META: Record<LootSlot, { label: string; icon: string }> = {
+  head: { label: 'Head', icon: '🧢' },
+  top: { label: 'Body', icon: '👕' },
+  accessory: { label: 'Legs', icon: '🦵' },
+  aura: { label: 'Aura', icon: '✨' },
+}
+
+function LootVisual({ icon, image, className }: { icon: string; image?: string; className?: string }) {
+  if (image) {
+    return (
+      <img
+        src={image}
+        alt=""
+        className={className ?? 'w-7 h-7 object-contain'}
+        style={{ imageRendering: 'pixelated' }}
+        draggable={false}
+      />
+    )
+  }
+  return <span className={className}>{icon}</span>
+}
+
 function formatXp(xp: number): string {
   return Math.max(0, Math.floor(xp)).toLocaleString()
 }
 
-function estimateSkillLevels(total: number, activeSkillName: string | null): FriendSkillRow[] {
-  if (total <= 0) return []
-  const rows = new Map<string, FriendSkillRow>()
-  const activeSkillId = activeSkillName ? getSkillByName(activeSkillName)?.id ?? null : null
-
-  // First point goes to the currently active skill (if any).
-  let remaining = total
-  if (activeSkillId && remaining > 0) {
-    rows.set(activeSkillId, { skill_id: activeSkillId, level: 1, total_xp: 0 })
-    remaining--
-  }
-
-  // Then give baseline 1 per other skills while we still have points.
-  for (const skill of SKILLS.filter((s) => s.id !== activeSkillId)) {
-    if (remaining <= 0) break
-    rows.set(skill.id, { skill_id: skill.id, level: 1, total_xp: 0 })
-    remaining--
-  }
-
-  // Put remaining points into active skill (or researcher fallback).
-  if (remaining > 0) {
-    const targetId = activeSkillId ?? 'researcher'
-    const current = rows.get(targetId) || { skill_id: targetId, level: 0, total_xp: 0 }
-    rows.set(targetId, { ...current, level: current.level + remaining })
-  }
-
-  return Array.from(rows.values())
+function mapAllSkillsToRows(profile: FriendProfileType): FriendSkillRow[] {
+  const byId = new Map((profile.all_skills || []).map((s) => [s.skill_id, s]))
+  return SKILLS.map((skill) => {
+    const row = byId.get(skill.id)
+    return {
+      skill_id: skill.id,
+      level: Math.max(0, row?.level ?? 0),
+      total_xp: row?.total_xp ?? 0,
+    }
+  })
 }
 
-export function FriendProfile({ profile, onBack, onCompare, onMessage, onRemove }: FriendProfileProps) {
+export function FriendProfile({ profile, onBack, onMessage, onRetrySync }: FriendProfileProps) {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [totalGrindSeconds, setTotalGrindSeconds] = useState(0)
+  const [loadingProfile, setLoadingProfile] = useState(true)
   const [achievements, setAchievements] = useState<string[]>([])
-  const [allSkills, setAllSkills] = useState<FriendSkillRow[]>([])
-  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [totalSessionsCount, setTotalSessionsCount] = useState(0)
+  const [friendCount, setFriendCount] = useState(0)
+  const [hasMarathonSession, setHasMarathonSession] = useState(false)
+  const [publicProgressEvents, setPublicProgressEvents] = useState<SocialFeedEvent[]>([])
+  const [allSkills, setAllSkills] = useState<FriendSkillRow[]>(() => {
+    if (profile.all_skills && profile.all_skills.some((s) => s.level > 0)) {
+      return mapAllSkillsToRows(profile)
+    }
+    return []
+  })
 
   useEffect(() => {
     if (!supabase) return
-    supabase
-      .from('session_summaries')
-      .select('id, duration_seconds, start_time')
-      .eq('user_id', profile.id)
-      .order('start_time', { ascending: false })
-      .limit(10)
-      .then(({ data }) => setSessions((data as SessionSummary[]) || []))
-    supabase
-      .from('session_summaries')
-      .select('duration_seconds')
-      .eq('user_id', profile.id)
-      .then(({ data }) => {
-        const total = ((data as { duration_seconds: number }[]) || []).reduce((sum, row) => sum + (row.duration_seconds || 0), 0)
+    let cancelled = false
+    setLoadingProfile(true)
+
+    ;(async () => {
+      try {
+        const [
+          sessionsRes,
+          totalsRes,
+          achievementsRes,
+          sessionsCountRes,
+          maxDurationRes,
+          friendsRes,
+          skillsRes,
+        ] = await Promise.all([
+          supabase
+            .from('session_summaries')
+            .select('id, duration_seconds, start_time')
+            .eq('user_id', profile.id)
+            .order('start_time', { ascending: false })
+            .limit(3),
+          supabase.from('session_summaries').select('duration_seconds').eq('user_id', profile.id),
+          supabase.from('user_achievements').select('achievement_id').eq('user_id', profile.id),
+          supabase.from('session_summaries').select('id', { count: 'exact', head: true }).eq('user_id', profile.id),
+          supabase
+            .from('session_summaries')
+            .select('duration_seconds')
+            .eq('user_id', profile.id)
+            .order('duration_seconds', { ascending: false })
+            .limit(1),
+          supabase
+            .from('friendships')
+            .select('id')
+            .eq('status', 'accepted')
+            .or(`user_id.eq.${profile.id},friend_id.eq.${profile.id}`),
+          supabase.from('user_skills').select('skill_id, level, total_xp').eq('user_id', profile.id),
+        ])
+
+        if (cancelled) return
+
+        setSessions((sessionsRes.data as SessionSummary[]) || [])
+        const total = ((totalsRes.data as { duration_seconds: number }[]) || []).reduce((sum, row) => sum + (row.duration_seconds || 0), 0)
         setTotalGrindSeconds(total)
-      })
-    supabase
-      .from('user_achievements')
-      .select('achievement_id')
-      .eq('user_id', profile.id)
-      .then(({ data }) => setAchievements((data || []).map((r) => (r as { achievement_id: string }).achievement_id)))
-    supabase
-      .from('user_skills')
-      .select('skill_id, level, total_xp')
-      .eq('user_id', profile.id)
-      .then(({ data }) => {
-        const merged = new Map<string, FriendSkillRow>()
-        for (const raw of ((data as FriendSkillRow[]) || [])) {
-          const skill_id = normalizeSkillId(raw.skill_id)
-          const total_xp = raw.total_xp ?? 0
-          const levelFromXp = skillLevelFromXP(total_xp)
-          const level = Math.max(raw.level ?? 0, levelFromXp)
-          const prev = merged.get(skill_id)
-          if (!prev) {
-            merged.set(skill_id, { skill_id, level, total_xp })
-          } else {
-            merged.set(skill_id, {
-              skill_id,
-              level: Math.max(prev.level, level),
-              total_xp: Math.max(prev.total_xp ?? 0, total_xp),
-            })
-          }
+        setAchievements(((achievementsRes.data || []) as { achievement_id: string }[]).map((r) => r.achievement_id))
+        setTotalSessionsCount(sessionsCountRes.count || 0)
+        const maxDur = (maxDurationRes.data?.[0] as { duration_seconds?: number } | undefined)?.duration_seconds ?? 0
+        setHasMarathonSession(maxDur >= 7200)
+        setFriendCount((friendsRes.data || []).length)
+
+        let rows = (skillsRes.data as FriendSkillRow[]) || []
+        if (((skillsRes as { error?: { message?: string } }).error) && rows.length === 0) {
+          // Backward-compatible fallback for deployments where total_xp is absent.
+          const fallbackSkillsRes = await supabase
+            .from('user_skills')
+            .select('skill_id, level')
+            .eq('user_id', profile.id)
+          rows = ((fallbackSkillsRes.data as Array<{ skill_id: string; level: number }>) || []).map((r) => ({
+            skill_id: r.skill_id,
+            level: r.level ?? 0,
+            total_xp: 0,
+          }))
         }
-        setAllSkills(Array.from(merged.values()))
-      })
+        if (rows.length > 0) {
+          const merged = new Map<string, FriendSkillRow>()
+          for (const raw of rows) {
+            const skill_id = normalizeSkillId(raw.skill_id)
+            const total_xp = raw.total_xp ?? 0
+            const levelFromXp = skillLevelFromXP(total_xp)
+            const level = Math.max(raw.level ?? 0, levelFromXp)
+            const prev = merged.get(skill_id)
+            if (!prev) {
+              merged.set(skill_id, { skill_id, level, total_xp })
+            } else {
+              merged.set(skill_id, {
+                skill_id,
+                level: Math.max(prev.level, level),
+                total_xp: Math.max(prev.total_xp ?? 0, total_xp),
+              })
+            }
+          }
+          setAllSkills(Array.from(merged.values()))
+        }
+      } catch {
+        if (!cancelled) setAchievements([])
+      } finally {
+        if (!cancelled) setLoadingProfile(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [profile.id])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const rows = await fetchUserPublicProgressHistory(profile.id, 12)
+      if (!cancelled) setPublicProgressEvents(rows)
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [profile.id])
 
   const formatDuration = (s: number) => {
@@ -127,231 +206,310 @@ export function FriendProfile({ profile, onBack, onCompare, onMessage, onRemove 
   const badges = (profile.equipped_badges || [])
     .map(bId => BADGES.find(b => b.id === bId))
     .filter(Boolean)
-  const parseActivity = (raw: string | null) => {
-    if (!raw) return { activityLabel: '', appName: null as string | null }
-    const sep = ' · '
-    const idx = raw.indexOf(sep)
-    if (idx >= 0) return { activityLabel: raw.slice(0, idx).trim(), appName: raw.slice(idx + sep.length).trim() || null }
-    return { activityLabel: raw, appName: null as string | null }
-  }
-  const { activityLabel, appName } = parseActivity(profile.current_activity ?? null)
+  const equippedLootBySlot = profile.equipped_loot || {}
+  const equippedLoot = Object.values(profile.equipped_loot || {})
+    .map((itemId) => LOOT_ITEMS.find((item) => item.id === itemId))
+    .filter(Boolean)
+  const topLoadout = useMemo(
+    () =>
+      (Object.keys(FRIEND_LOOT_SLOT_META) as LootSlot[]).map((slot) => {
+        const itemId = equippedLootBySlot[slot]
+        const item = itemId ? LOOT_ITEMS.find((x) => x.id === itemId) ?? null : null
+        return { slot, item }
+      }),
+    [equippedLootBySlot],
+  )
+  const activeBuffs = useMemo(
+    () =>
+      topLoadout
+        .filter((entry) => Boolean(entry.item))
+        .map((entry) => ({
+          slot: FRIEND_LOOT_SLOT_META[entry.slot].label,
+          itemName: entry.item!.name,
+          description: entry.item!.perkDescription,
+          isGameplay: entry.item!.perkType !== 'cosmetic',
+        })),
+    [topLoadout],
+  )
+  const { activityLabel, appName, sessionStartMs } = parseFriendPresence(profile.current_activity ?? null)
   const isLeveling = profile.is_online && activityLabel.startsWith('Leveling ')
   const levelingSkill = isLeveling ? activityLabel.replace('Leveling ', '') : null
+  const liveDuration = profile.is_online && sessionStartMs ? formatSessionDurationCompact(sessionStartMs) : null
   const totalSkillLevel = allSkills.length > 0
     ? computeTotalSkillLevelFromLevels(allSkills.map(s => ({ skill_id: s.skill_id, level: s.level })))
     : (profile.total_skill_level ?? 0)
-  const mergedSkillRows: FriendSkillRow[] = allSkills.length > 0
+  const hasConfirmedSkillRows = allSkills.length > 0
+  const hasProfileSkillRows = !!profile.all_skills && profile.all_skills.some((s) => s.level > 0)
+  const isSkillBreakdownPending = !hasConfirmedSkillRows && !hasProfileSkillRows
+  const mergedSkillRows: FriendSkillRow[] = hasConfirmedSkillRows
     ? allSkills
-    : (profile.top_skills && profile.top_skills.length > 0
-      ? profile.top_skills.map((s) => ({ skill_id: s.skill_id, level: s.level, total_xp: 0 }))
-      : estimateSkillLevels(totalSkillLevel, levelingSkill))
+    : (hasProfileSkillRows
+      ? mapAllSkillsToRows(profile)
+      : SKILLS.map((skillDef) => ({ skill_id: skillDef.id, level: 0, total_xp: 0 })))
   const persona = getPersonaById(profile.persona_id ?? null)
 
-  // Unlocked achievements details
-  const unlockedAchievements = ACHIEVEMENTS.filter(a => achievements.includes(a.id))
+  const fallbackAchievementIds = useMemo(() => {
+    const ids = new Set<string>()
+    if (totalSessionsCount >= 1) ids.add('first_session')
+    if (totalSessionsCount >= 10) ids.add('ten_sessions')
+    if (totalSessionsCount >= 50) ids.add('fifty_sessions')
+    if (hasMarathonSession) ids.add('marathon')
+    if ((profile.streak_count || 0) >= 2) ids.add('streak_2')
+    if ((profile.streak_count || 0) >= 7) ids.add('streak_7')
+    if ((profile.streak_count || 0) >= 14) ids.add('streak_14')
+    if ((profile.streak_count || 0) >= 30) ids.add('streak_30')
+    if (friendCount >= 1) ids.add('first_friend')
+    if (friendCount >= 5) ids.add('five_friends')
+    if (friendCount >= 10) ids.add('social_butterfly')
+
+    const skillLevels: Record<string, number> = {}
+    for (const row of mergedSkillRows) skillLevels[row.skill_id] = row.level
+    const skillAch = checkSkillAchievements(skillLevels, Array.from(ids))
+    for (const a of skillAch) ids.add(a.id)
+    return Array.from(ids)
+  }, [totalSessionsCount, hasMarathonSession, profile.streak_count, friendCount, mergedSkillRows])
+
+  const unlockedIdsForDisplay = achievements.length > 0 ? achievements : fallbackAchievementIds
+  const unlockedAchievements = ACHIEVEMENTS.filter(a => unlockedIdsForDisplay.includes(a.id))
+  if (loadingProfile) {
+    return (
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: MOTION.duration.fast, ease: MOTION.easing }} className="space-y-3 animate-pulse">
+        <div className="flex items-center justify-between">
+          <div className="h-4 w-14 rounded bg-white/10" />
+          <div className="h-8 w-52 rounded-full bg-white/10" />
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-discord-card/70 p-5">
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 rounded-xl bg-white/10" />
+            <div className="flex-1 space-y-2">
+              <div className="h-4 w-32 rounded bg-white/10" />
+              <div className="h-3 w-20 rounded bg-white/10" />
+            </div>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <div className="h-16 rounded-xl bg-white/10 border border-white/5" />
+          <div className="h-16 rounded-xl bg-white/10 border border-white/5" />
+          <div className="h-16 rounded-xl bg-white/10 border border-white/5" />
+        </div>
+        <div className="h-56 rounded-xl bg-white/10 border border-white/5" />
+      </motion.div>
+    )
+  }
 
   return (
     <motion.div
-      initial={{ opacity: 0, x: 10 }}
-      animate={{ opacity: 1, x: 0 }}
-      className="space-y-3"
+      initial={MOTION.subPage.initial}
+      animate={MOTION.subPage.animate}
+      exit={MOTION.subPage.exit}
+      transition={{ duration: MOTION.duration.base, ease: MOTION.easing }}
+      className="space-y-4 pb-2"
     >
-      {/* Navigation */}
-      <div className="flex items-center justify-between">
-        <button onClick={onBack} className="flex items-center gap-1.5 text-gray-400 hover:text-white transition-colors text-sm">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-          <span className="font-mono text-xs">Back</span>
-        </button>
-        <div className="flex items-center gap-2">
-          {onMessage && (
-            <button
-              onClick={onMessage}
-              className="text-xs px-3 py-1 rounded-full border border-cyber-neon/30 text-cyber-neon bg-cyber-neon/10 hover:bg-cyber-neon/20 transition-colors font-medium"
-            >
-              💬 Message
-            </button>
-          )}
-          {onCompare && (
-            <button
-              onClick={onCompare}
-              className="text-xs px-3 py-1 rounded-full border border-cyber-neon/30 text-cyber-neon bg-cyber-neon/10 hover:bg-cyber-neon/20 transition-colors font-medium"
-            >
-              ⚔️ Compare
-            </button>
-          )}
-          {onRemove && !confirmRemove && (
-            <button
-              onClick={() => setConfirmRemove(true)}
-              className="text-xs px-2 py-1 rounded-full border border-red-500/30 text-red-400 bg-red-500/10 hover:bg-red-500/20 transition-colors"
-              title="Remove friend"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                <line x1="10" y1="11" x2="10" y2="17" />
-                <line x1="14" y1="11" x2="14" y2="17" />
-              </svg>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Remove confirmation */}
-      <AnimatePresence>
-        {confirmRemove && (
-          <motion.div
-            initial={{ opacity: 0, height: 0, y: -6, scale: 0.98, marginBottom: -16 }}
-            animate={{ opacity: 1, height: 'auto', y: 0, scale: 1, marginBottom: 0 }}
-            exit={{ opacity: 0, height: 0, y: -6, scale: 0.98, marginBottom: -16 }}
-            transition={{ duration: 0.36, ease: [0.16, 1, 0.3, 1] }}
-            className="rounded-xl bg-red-500/10 border border-red-500/20 p-3 flex items-center justify-between overflow-hidden"
-          >
-            <span className="text-xs text-red-400">Remove {profile.username || 'this friend'}?</span>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setConfirmRemove(false)}
-                className="text-[10px] px-3 py-1 rounded-lg bg-white/5 text-gray-400 hover:text-white transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => { setConfirmRemove(false); onRemove?.() }}
-                className="text-[10px] px-3 py-1 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors font-medium"
-              >
-                Remove
-              </button>
-            </div>
-          </motion.div>
+      <PageHeader
+        title={profile.username || 'Friend'}
+        onBack={onBack}
+        rightSlot={(
+          <span className={`idly-badge ${profile.is_online ? 'text-cyber-neon border-cyber-neon/30 bg-cyber-neon/10' : 'text-gray-400 border-white/15 bg-white/5'}`}>
+            {profile.is_online ? 'Online' : 'Offline'}
+          </span>
         )}
-      </AnimatePresence>
-      {/* Profile Card */}
-      <div className="rounded-2xl bg-gradient-to-br from-discord-card/90 to-discord-card/60 border border-white/10 p-5 relative overflow-hidden">
-        {/* Subtle background pattern */}
-        <div className="absolute inset-0 opacity-[0.02]" style={{ backgroundImage: 'repeating-linear-gradient(0deg, white 0px, transparent 1px, transparent 20px), repeating-linear-gradient(90deg, white 0px, transparent 1px, transparent 20px)' }} />
-
-        <div className="relative flex items-center gap-4">
-          {/* Avatar with frame */}
-          <div className="relative shrink-0">
-            {frame && (
-              <div
-                className="absolute -inset-2 rounded-2xl"
-                style={{ background: frame.gradient, opacity: 0.7 }}
+      />
+      {/* Profile Hero */}
+      <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-discord-card to-discord-card/70 p-4 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="relative shrink-0">
+              <AvatarWithFrame
+                avatar={profile.avatar_url || '🤖'}
+                frameId={profile.equipped_frame}
+                sizeClass="w-16 h-16"
+                textClass="text-3xl"
+                roundedClass="rounded-xl"
+                ringInsetClass="-inset-1.5"
               />
-            )}
-            <div
-              className={`relative w-16 h-16 rounded-xl flex items-center justify-center text-3xl bg-discord-darker ${
-                frame ? 'border-2' : 'border border-white/10'
-              }`}
-              style={frame ? { borderColor: frame.color } : undefined}
-            >
-              {profile.avatar_url || '🤖'}
+              <span className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-discord-card ${profile.is_online ? 'bg-cyber-neon' : 'bg-gray-600'}`} />
             </div>
-            {/* Online indicator */}
-            <span className={`absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-discord-card ${
-              profile.is_online ? 'bg-cyber-neon' : 'bg-gray-600'
-            }`} />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <h3 className="text-white font-semibold text-lg truncate">{profile.username || 'Anonymous'}</h3>
+                <span className="idly-badge text-cyber-neon border-cyber-neon/30 bg-cyber-neon/10" title="Total skill level">
+                  Lv {totalSkillLevel}/{MAX_TOTAL_SKILL_LEVEL}
+                </span>
+              </div>
+              {persona && (
+                <p className="text-xs text-gray-400 mt-1" title={persona.description}>
+                  {persona.emoji} {persona.label}
+                </p>
+              )}
+              {profile.status_title && (
+                <p className="text-[11px] text-cyber-neon mt-1 font-mono">
+                  {profile.status_title}
+                </p>
+              )}
+              <p className="text-sm mt-1.5 text-gray-300">
+                {profile.is_online
+                  ? (isLeveling
+                    ? `Leveling ${levelingSkill}${liveDuration ? ` • ${liveDuration}` : ''}`
+                    : activityLabel || 'Online')
+                  : 'Offline'}
+              </p>
+              {profile.is_online && appName && (
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {appName}{liveDuration ? ` • session ${liveDuration}` : ''}
+                </p>
+              )}
+            </div>
+          </div>
+          {onMessage && (
+            <motion.button
+              type="button"
+              onClick={onMessage}
+              whileTap={MOTION.interactive.tap}
+              className="shrink-0 p-2 rounded-lg border border-cyber-neon/30 text-cyber-neon bg-cyber-neon/10 hover:bg-cyber-neon/20 transition-colors"
+              title="Message"
+              aria-label="Message"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+            </motion.button>
+          )}
           </div>
 
-          {/* Info */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-white font-bold text-base truncate">{profile.username || 'Anonymous'}</span>
-              <span className="text-cyber-neon font-mono text-xs" title="Total skill level">{totalSkillLevel}/{MAX_TOTAL_SKILL_LEVEL}</span>
-              {persona && (
-                <span className="text-xs px-1.5 py-0.5 rounded border border-white/10 bg-discord-darker/80 text-gray-400" title={persona.description}>
-                  {persona.emoji} {persona.label}
-                </span>
-              )}
-            </div>
+        {badges.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {badges.map((badge) => badge && (
+              <span
+                key={badge.id}
+                className="idly-badge font-medium"
+                style={{ borderColor: `${badge.color}40`, backgroundColor: `${badge.color}12`, color: badge.color }}
+              >
+                {badge.icon} {badge.label}
+              </span>
+            ))}
+          </div>
+        )}
+        {equippedLoot.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {equippedLoot.map((item) => item && (
+              <span
+                key={item.id}
+                className="idly-badge font-medium border-cyber-neon/20 bg-cyber-neon/10 text-cyber-neon"
+              >
+                {item.icon} {item.name}
+              </span>
+            ))}
+          </div>
+        )}
 
-            {/* Badges row */}
-            {badges.length > 0 && (
-              <div className="flex items-center gap-1 mb-1.5">
-                {badges.map(badge => badge && (
-                  <span
-                    key={badge.id}
-                    className="text-[9px] px-1.5 py-0.5 rounded-md border font-medium"
-                    style={{ borderColor: `${badge.color}40`, backgroundColor: `${badge.color}15`, color: badge.color }}
-                  >
-                    {badge.icon} {badge.label}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {/* Status */}
-            <div className="flex flex-col gap-0.5 mb-1.5">
-              <div className="flex items-center gap-1.5">
-                {profile.is_online ? (
-                  isLeveling ? (() => {
-                    const skill = getSkillByName(levelingSkill ?? '')
-                    return (
-                      <span className="text-[11px] text-cyber-neon font-medium flex items-center gap-1.5">
-                        {skill?.icon && <span className="text-sm">{skill.icon}</span>}
-                        Leveling {levelingSkill}
-                      </span>
-                    )
-                  })() : activityLabel ? (
-                    <span className="text-[11px] text-blue-400">{activityLabel}</span>
+        <div className="rounded-xl border border-white/10 bg-discord-darker/35 p-2.5 space-y-2">
+          <p className="text-[10px] uppercase tracking-wider text-gray-500 font-mono">Loadout & Buffs</p>
+          <div className="grid grid-cols-2 gap-2">
+            {(Object.keys(FRIEND_LOOT_SLOT_META) as LootSlot[]).map((slot) => {
+              const meta = FRIEND_LOOT_SLOT_META[slot]
+              const itemId = equippedLootBySlot[slot]
+              const item = itemId ? LOOT_ITEMS.find((x) => x.id === itemId) ?? null : null
+              return (
+                <div key={slot} className="rounded-lg border border-white/10 bg-discord-card/55 p-1.5">
+                  <p className="text-[9px] font-mono text-gray-400 uppercase">{meta.icon} {meta.label}</p>
+                  {item ? (
+                    <div className="mt-1 flex items-center gap-1.5">
+                      <div className="w-8 h-8 rounded border border-cyber-neon/25 bg-discord-darker/50 flex items-center justify-center shrink-0">
+                        <LootVisual icon={item.icon} image={item.image} className="w-5 h-5 object-contain" />
+                      </div>
+                      <p className="text-[10px] text-white truncate">{item.name}</p>
+                    </div>
                   ) : (
-                    <span className="text-[11px] text-cyber-neon">Online</span>
-                  )
-                ) : (
-                  <span className="text-[11px] text-gray-600">Offline</span>
-                )}
-              </div>
-              {profile.is_online && appName && (
-                <span className="text-[10px] text-gray-500">in {appName}</span>
-              )}
-            </div>
-
-            </div>
+                    <p className="text-[10px] text-gray-600 mt-1">Empty</p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          <div className="rounded-lg border border-white/10 bg-discord-card/45 p-2 space-y-1.5">
+            <p className="text-[10px] uppercase tracking-wider text-gray-500 font-mono">Buffs</p>
+            {activeBuffs.length > 0 ? (
+              activeBuffs.map((buff) => (
+                <div key={`${buff.slot}-${buff.itemName}`} className="rounded-md border border-white/10 bg-discord-darker/45 p-1.5">
+                  <p className={`text-[9px] font-mono ${buff.isGameplay ? 'text-cyber-neon' : 'text-gray-400'}`}>
+                    {buff.slot} · {buff.itemName}
+                  </p>
+                  <p className="text-[10px] text-gray-200 leading-tight">{buff.description}</p>
+                </div>
+              ))
+            ) : (
+              <p className="text-[10px] text-gray-600">No active buffs.</p>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-3 gap-2">
-        <div className="rounded-xl bg-discord-card/80 border border-white/5 p-2.5 text-center">
-          <p className="text-[10px] text-gray-500 font-mono uppercase">Skill lvl</p>
-          <p className="text-lg font-mono font-bold text-cyber-neon">{totalSkillLevel}</p>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="idly-card-soft p-3">
+          <p className="text-xs text-gray-500 font-mono uppercase">Skill level</p>
+          <p className="text-xl font-mono font-bold text-cyber-neon mt-1">{totalSkillLevel}</p>
         </div>
-        <div className="rounded-xl bg-discord-card/80 border border-white/5 p-2.5 text-center">
-          <p className="text-[10px] text-gray-500 font-mono uppercase">Streak</p>
-          <p className="text-lg font-mono font-bold text-orange-400">
-            {profile.streak_count > 0 ? `🔥${profile.streak_count}` : '—'}
+        <div className="idly-card-soft p-3">
+          <p className="text-xs text-gray-500 font-mono uppercase">Streak</p>
+          <p className="text-xl font-mono font-bold text-orange-400 mt-1">
+            {profile.streak_count > 0 ? `🔥 ${profile.streak_count}` : '—'}
           </p>
         </div>
-        <div className="rounded-xl bg-discord-card/80 border border-white/5 p-2.5 text-center">
-          <p className="text-[10px] text-gray-500 font-mono uppercase">Grind Time</p>
-          <p className="text-lg font-mono font-bold text-white">{formatDuration(totalGrindSeconds)}</p>
+        <div className="idly-card-soft p-3">
+          <p className="text-xs text-gray-500 font-mono uppercase">Grind time</p>
+          <p className="text-xl font-mono font-bold text-white mt-1">{formatDuration(totalGrindSeconds)}</p>
+        </div>
+        <div className="idly-card-soft p-3">
+          <p className="text-xs text-gray-500 font-mono uppercase">Sessions</p>
+          <p className="text-xl font-mono font-bold text-white mt-1">{totalSessionsCount}</p>
         </div>
       </div>
 
       {/* All Skills */}
-      <div className="rounded-xl bg-discord-card/80 border border-white/10 p-4 space-y-2.5">
-        <p className="text-[10px] uppercase tracking-wider text-gray-500 font-mono">Skills</p>
+      <div className="rounded-xl bg-discord-card/80 border border-white/10 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-xs uppercase tracking-wider text-gray-500 font-mono">Skills</p>
+          <div className="flex items-center gap-2">
+            {!hasConfirmedSkillRows && !hasProfileSkillRows && (
+              <span className="text-xs text-amber-400/90 font-mono">Sync pending</span>
+            )}
+            {!hasConfirmedSkillRows && onRetrySync && (
+              <button
+                type="button"
+                onClick={onRetrySync}
+                className="text-xs px-2 py-1 rounded-md border border-white/15 text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        </div>
+        {isSkillBreakdownPending && (
+          <p className="text-xs text-gray-500 font-mono">
+            Waiting for this friend's real per-skill sync...
+          </p>
+        )}
         {(() => {
           const skillMap = new Map(mergedSkillRows.map((s) => [s.skill_id, s]))
           return SKILLS.map((skillDef) => {
             const data = skillMap.get(skillDef.id)
-            const level = Math.max(1, data?.level ?? 0)
+            const level = Math.max(0, data?.level ?? 0)
             const totalXp = data?.total_xp ?? 0
-            const hasRealXp = allSkills.length > 0 && totalXp > 0
+            const hasRealXp = hasConfirmedSkillRows && totalXp > 0
+            const unknownSkill = isSkillBreakdownPending
             const xpProg = hasRealXp ? skillXPProgress(totalXp) : null
-            const pct = xpProg && xpProg.needed > 0
+            const pct = unknownSkill ? 0 : xpProg && xpProg.needed > 0
               ? Math.min(100, (xpProg.current / xpProg.needed) * 100)
-              : Math.min(100, (level / 99) * 100)
+              : (hasConfirmedSkillRows ? Math.min(100, (level / 99) * 100) : 0)
             const xpTitle = hasRealXp
               ? `${skillDef.name}: ${formatXp(totalXp)} XP`
-              : `${skillDef.name}: XP sync pending`
+              : unknownSkill
+                ? `${skillDef.name}: pending sync`
+                : `${skillDef.name}: LV ${level}`
             const isActive = levelingSkill === skillDef.name
             return (
-              <div
-                key={skillDef.id}
-                className={`flex items-center gap-3 p-2 rounded-lg transition-colors ${
-                  isActive ? 'bg-cyber-neon/5 border border-cyber-neon/20' : ''
-                }`}
-              >
+              <div key={skillDef.id} className={`flex items-center gap-3 p-2.5 rounded-lg border transition-colors ${isActive ? 'bg-cyber-neon/5 border-cyber-neon/20' : 'border-white/5 bg-discord-darker/30'}`}>
                 <div
                   className="w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0"
                   style={{ backgroundColor: `${skillDef.color}15`, border: `1px solid ${skillDef.color}30` }}
@@ -360,10 +518,10 @@ export function FriendProfile({ profile, onBack, onCompare, onMessage, onRemove 
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-[12px] font-semibold text-white">{skillDef.name}</span>
+                    <span className="text-sm font-semibold text-white">{skillDef.name}</span>
                     {isActive && (
                       <span
-                        className="text-[8px] font-mono font-bold px-1 py-0.5 rounded uppercase"
+                        className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded uppercase"
                         style={{ backgroundColor: `${skillDef.color}20`, color: skillDef.color }}
                       >
                         active
@@ -375,35 +533,32 @@ export function FriendProfile({ profile, onBack, onCompare, onMessage, onRemove 
                   </div>
                 </div>
                 <div
-                  className="w-9 h-9 rounded-lg flex flex-col items-center justify-center shrink-0"
-                  style={{ backgroundColor: `${skillDef.color}10`, border: `1px solid ${skillDef.color}20` }}
+                  className="w-11 h-11 rounded-lg flex flex-col items-center justify-center shrink-0"
+                  style={{ backgroundColor: unknownSkill ? 'rgba(255,255,255,0.04)' : `${skillDef.color}10`, border: unknownSkill ? '1px solid rgba(255,255,255,0.08)' : `1px solid ${skillDef.color}20` }}
                 >
-                  <span className="text-[8px] text-gray-500 font-mono leading-none">LV</span>
-                  <span className="text-[10px] font-mono font-bold leading-tight" style={{ color: skillDef.color }}>{level}/99</span>
+                  <span className="text-[9px] text-gray-500 font-mono leading-none">LV</span>
+                  <span className="text-xs font-mono font-bold leading-tight" style={{ color: unknownSkill ? '#9ca3af' : skillDef.color }}>
+                    {unknownSkill ? '--/99' : `${level}/99`}
+                  </span>
                 </div>
               </div>
             )
           })
         })()}
-        {allSkills.length === 0 && (
-          <p className="text-[11px] text-gray-500">
-            Showing synced top skills only. Full skill breakdown updates after friend sync.
-          </p>
-        )}
       </div>
 
       {/* Achievements */}
-      <div className="rounded-xl bg-discord-card/80 border border-white/10 p-4 space-y-2">
+      <div className="rounded-xl bg-discord-card/80 border border-white/10 p-4 space-y-2.5">
         <div className="flex items-center justify-between">
-          <p className="text-[10px] uppercase tracking-wider text-gray-500 font-mono">Achievements</p>
-          <span className="text-[10px] text-gray-600 font-mono">{achievements.length}/{ACHIEVEMENTS.length}</span>
+          <p className="text-xs uppercase tracking-wider text-gray-500 font-mono">Achievements</p>
+          <span className="text-xs text-gray-600 font-mono">{unlockedIdsForDisplay.length}/{ACHIEVEMENTS.length}</span>
         </div>
         {unlockedAchievements.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5">
+          <div className="grid grid-cols-8 gap-1.5">
             {unlockedAchievements.map(a => (
               <span
                 key={a.id}
-                className="text-sm px-2 py-1 rounded-lg bg-cyber-neon/10 border border-cyber-neon/20"
+                className="h-8 rounded-lg bg-cyber-neon/10 border border-cyber-neon/20 flex items-center justify-center text-sm"
                 title={`${a.name}: ${a.description}`}
               >
                 {a.icon}
@@ -411,30 +566,27 @@ export function FriendProfile({ profile, onBack, onCompare, onMessage, onRemove 
             ))}
           </div>
         ) : (
-          <p className="text-[11px] text-gray-600">No achievements yet</p>
+          <p className="text-sm text-gray-600">No achievements yet</p>
         )}
       </div>
 
       {/* Frame showcase */}
       {frame && (
         <div className="rounded-xl bg-discord-card/80 border border-white/10 p-4">
-          <p className="text-[10px] uppercase tracking-wider text-gray-500 font-mono mb-2">Equipped Frame</p>
+          <p className="text-xs uppercase tracking-wider text-gray-500 font-mono mb-2">Equipped Frame</p>
           <div className="flex items-center gap-3">
-            <div className="relative w-12 h-12">
-              <div
-                className="absolute -inset-1 rounded-xl"
-                style={{ background: frame.gradient, opacity: 0.8 }}
-              />
-              <div
-                className="relative w-12 h-12 rounded-lg bg-discord-darker flex items-center justify-center text-xl border-2"
-                style={{ borderColor: frame.color }}
-              >
-                {profile.avatar_url || '🤖'}
-              </div>
-            </div>
+            <AvatarWithFrame
+              avatar={profile.avatar_url || '🤖'}
+              frameId={profile.equipped_frame}
+              sizeClass="w-12 h-12"
+              textClass="text-xl"
+              roundedClass="rounded-lg"
+              ringInsetClass="-inset-1"
+              ringOpacity={0.8}
+            />
             <div>
               <p className="text-xs font-semibold text-white">{frame.name}</p>
-              <p className="text-[10px] font-mono" style={{ color: frame.color }}>{frame.rarity}</p>
+              <p className="text-xs font-mono" style={{ color: frame.color }}>{frame.rarity}</p>
             </div>
           </div>
         </div>
@@ -442,20 +594,37 @@ export function FriendProfile({ profile, onBack, onCompare, onMessage, onRemove 
 
       {/* Recent Sessions */}
       <div className="rounded-xl bg-discord-card/80 border border-white/10 p-4 space-y-2">
-        <p className="text-[10px] uppercase tracking-wider text-gray-500 font-mono">Recent Sessions</p>
+        <p className="text-xs uppercase tracking-wider text-gray-500 font-mono">Recent Sessions</p>
         {sessions.length > 0 ? (
-          <div className="space-y-1">
-            {sessions.map((s) => (
-              <div key={s.id} className="flex items-center justify-between py-1">
-                <span className="text-[11px] text-gray-400">
-                  {new Date(s.start_time).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          <div className="space-y-1.5">
+            {sessions.slice(0, 3).map((s) => (
+              <div key={s.id} className="flex items-center justify-between py-1.5 px-2 rounded-lg bg-discord-darker/40 border border-white/5">
+                <span className="text-sm text-gray-400">
+                  {new Date(s.start_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })},{' '}
+                  {new Date(s.start_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}
                 </span>
-                <span className="text-[11px] text-cyber-neon font-mono font-medium">{formatDuration(s.duration_seconds)}</span>
+                <span className="text-sm text-cyber-neon font-mono font-medium">{formatDuration(s.duration_seconds)}</span>
               </div>
             ))}
           </div>
         ) : (
-          <p className="text-[11px] text-gray-600">No sessions yet</p>
+          <p className="text-sm text-gray-600">No sessions yet</p>
+        )}
+      </div>
+
+      <div className="rounded-xl bg-discord-card/80 border border-white/10 p-4 space-y-2">
+        <p className="text-xs uppercase tracking-wider text-gray-500 font-mono">Public progression history</p>
+        {publicProgressEvents.length > 0 ? (
+          <div className="space-y-1.5">
+            {publicProgressEvents.map((event) => (
+              <div key={event.id} className="rounded-lg bg-discord-darker/40 border border-white/5 px-2 py-1.5">
+                <p className="text-[11px] text-white">{event.event_type.replaceAll('_', ' ')}</p>
+                <p className="text-[10px] text-gray-400 truncate">{JSON.stringify(event.payload)}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-600">No public progression events yet</p>
         )}
       </div>
     </motion.div>

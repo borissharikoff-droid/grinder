@@ -3,47 +3,65 @@ import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
 import { getStreakMultiplier } from '../../lib/xp'
 import { computeTotalSkillLevel, MAX_TOTAL_SKILL_LEVEL } from '../../lib/skills'
-import { detectPersona } from '../../lib/persona'
 import { FRAMES, BADGES, getEquippedFrame, getEquippedBadges } from '../../lib/cosmetics'
 import { playClickSound } from '../../lib/sounds'
 import { useAlertStore } from '../../stores/alertStore'
 import { useNotificationStore } from '../../stores/notificationStore'
 import { NotificationPanel } from '../notifications/NotificationPanel'
+import { ensureInventoryHydrated, useInventoryStore } from '../../stores/inventoryStore'
+import { AvatarWithFrame } from '../shared/AvatarWithFrame'
 
 interface ProfileBarProps {
   onNavigateProfile?: () => void
+  onNavigateInventory?: () => void
 }
 
-export function ProfileBar({ onNavigateProfile }: ProfileBarProps) {
+export function ProfileBar({ onNavigateProfile, onNavigateInventory }: ProfileBarProps) {
   const { user } = useAuthStore()
-  const [username, setUsername] = useState('')
+  const [username, setUsername] = useState('Idly')
   const [avatar, setAvatar] = useState('🤖')
   const [totalSkillLevel, setTotalSkillLevel] = useState(0)
-  const [persona, setPersona] = useState<{ emoji: string; label: string; description: string } | null>(null)
-  const [showPersonaTooltip, setShowPersonaTooltip] = useState(false)
   const [frameId, setFrameId] = useState<string | null>(null)
   const [badgeIds, setBadgeIds] = useState<string[]>([])
   const [streak, setStreak] = useState(0)
-  const [loaded, setLoaded] = useState(false)
   const activeFrame = FRAMES.find(f => f.id === frameId)
   const streakMult = getStreakMultiplier(streak)
   const lootCount = useAlertStore((s) => (s.currentAlert ? 1 : 0) + s.queue.length)
   const unreadCount = useNotificationStore((s) => s.unreadCount)
   const [bellOpen, setBellOpen] = useState(false)
   const bellRef = useRef<HTMLButtonElement>(null)
-  const toggleBell = useCallback(() => { playClickSound(); setBellOpen((o) => !o) }, [])
+  const inventoryItemCount = useInventoryStore((s) => Object.values(s.items).reduce((sum, qty) => sum + qty, 0))
+  const chestCount = useInventoryStore((s) => Object.values(s.chests).reduce((sum, qty) => sum + qty, 0))
+  const pendingCount = useInventoryStore((s) => s.pendingRewards.filter((r) => !r.claimed).length)
+  const backpackCount = inventoryItemCount + chestCount + pendingCount
+  const toggleBell = useCallback(() => {
+    playClickSound()
+    setBellOpen((o) => !o)
+  }, [])
 
   useEffect(() => {
+    if (user) {
+      const cacheKey = `idly_profile_cache_${user.id}`
+      try {
+        const cached = JSON.parse(localStorage.getItem(cacheKey) || '{}') as { username?: string; avatar?: string }
+        if (cached.username) setUsername(cached.username)
+        if (cached.avatar) setAvatar(cached.avatar)
+      } catch {
+        // ignore broken cache
+      }
+    }
+
     if (supabase && user) {
       supabase.from('profiles').select('username, avatar_url').eq('id', user.id).single().then(({ data }) => {
         if (data) {
-          setUsername(data.username || 'Idly')
-          setAvatar(data.avatar_url || '🤖')
+          const nextUsername = data.username || 'Idly'
+          const nextAvatar = data.avatar_url || '🤖'
+          setUsername(nextUsername)
+          setAvatar(nextAvatar)
+          const cacheKey = `idly_profile_cache_${user.id}`
+          localStorage.setItem(cacheKey, JSON.stringify({ username: nextUsername, avatar: nextAvatar }))
         }
-        setLoaded(true)
-      }).catch(() => setLoaded(true))
-    } else {
-      setLoaded(true)
+      }).catch(() => {})
     }
     const api = window.electronAPI
     if (api?.db?.getAllSkillXP) {
@@ -56,35 +74,23 @@ export function ProfileBar({ onNavigateProfile }: ProfileBarProps) {
     if (api?.db?.getStreak) {
       api.db.getStreak().then((s: number) => setStreak(s || 0))
     }
-    if (api?.db?.getCategoryStats) {
-      api.db.getCategoryStats().then((cats) => {
-        const p = detectPersona((cats || []) as { category: string; total_ms: number }[])
-        setPersona(p)
-      })
-    } else {
-      setPersona(detectPersona([]))
-    }
+    ensureInventoryHydrated()
   }, [user])
 
-  if (!supabase || !user) return null
-
   return (
-    <div className={`flex flex-col items-center px-4 pt-3 pb-4 transition-opacity duration-150 ${loaded ? 'opacity-100' : 'opacity-0'}`}>
+    <div className="flex flex-col items-center px-4 pt-3 pb-4">
       {/* Top row: avatar + info + sign out — overflow hidden so tooltips don't expand window */}
       <div className="flex items-center gap-2.5 w-full max-w-[340px] min-w-0">
         {/* Avatar */}
         <button onClick={() => { playClickSound(); onNavigateProfile?.() }} className={`relative shrink-0 ${activeFrame ? `frame-style-${activeFrame.style}` : ''}`} title="Profile">
-          {activeFrame && (
-            <div className="frame-ring absolute -inset-1 rounded-full" style={{ background: activeFrame.gradient, opacity: 0.7, color: activeFrame.color, borderColor: activeFrame.color }} />
-          )}
-          <div
-            className={`frame-avatar relative w-9 h-9 rounded-full bg-discord-card flex items-center justify-center text-lg hover:scale-105 transition-transform ${
-              activeFrame ? 'border-2' : 'border border-white/10'
-            }`}
-            style={activeFrame ? { borderColor: activeFrame.color } : undefined}
-          >
-            {avatar}
-          </div>
+          <AvatarWithFrame
+            avatar={avatar}
+            frameId={frameId}
+            sizeClass="w-9 h-9 frame-avatar hover:scale-105 transition-transform"
+            textClass="text-lg"
+            roundedClass="rounded-full"
+            ringInsetClass="-inset-1"
+          />
           {lootCount > 0 && (
             <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-cyber-neon text-discord-darker text-[9px] font-bold flex items-center justify-center shadow-[0_0_6px_rgba(0,255,136,0.5)]">
               {lootCount}
@@ -111,25 +117,31 @@ export function ProfileBar({ onNavigateProfile }: ProfileBarProps) {
               ) : null
             })}
 
-            {persona && (
-              <div className="relative shrink-0" onMouseEnter={() => setShowPersonaTooltip(true)} onMouseLeave={() => setShowPersonaTooltip(false)}>
-                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-discord-card/80 border border-white/5 text-gray-400 cursor-default">
-                  {persona.emoji}
-                </span>
-                {showPersonaTooltip && (
-                  <div className="absolute right-0 top-full mt-1.5 w-44 max-w-[calc(100vw-2rem)] px-2.5 py-2 rounded-lg bg-discord-card border border-white/10 text-[10px] text-gray-300 z-20 shadow-xl pointer-events-none">
-                    <p className="font-medium text-white">{persona.emoji} {persona.label}</p>
-                    <p className="text-gray-500 mt-1 leading-relaxed break-words">
-                      By activity. We analyze what you do and show your focus profile.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-
           </div>
         </div>
 
+        <div className="relative shrink-0">
+          <button
+            onClick={() => {
+              playClickSound()
+              setBellOpen(false)
+              onNavigateInventory?.()
+            }}
+            className="w-8 h-8 mr-1 rounded-lg bg-discord-card/60 border border-white/[0.06] flex items-center justify-center text-gray-400 hover:text-white hover:border-white/10 transition-colors relative"
+            title="Backpack"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 7V6a4 4 0 0 1 8 0v1" />
+              <path d="M6 7h12a1 1 0 0 1 1 1v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V8a1 1 0 0 1 1-1z" />
+              <path d="M9 12h6" />
+            </svg>
+            {backpackCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-1 rounded-full bg-cyber-neon text-discord-darker text-[8px] font-bold flex items-center justify-center">
+                {backpackCount > 9 ? '9+' : backpackCount}
+              </span>
+            )}
+          </button>
+        </div>
         <div className="relative shrink-0">
           <button
             ref={bellRef}

@@ -15,6 +15,10 @@ create table if not exists public.profiles (
   current_activity text,
   is_online boolean default false,
   streak_count integer default 0,
+  equipped_badges text[] default '{}',
+  equipped_frame text,
+  equipped_loot jsonb default '{}'::jsonb,
+  status_title text,
   updated_at timestamptz default now()
 );
 
@@ -59,6 +63,10 @@ create policy "Users can create friendship requests"
 create policy "Users can update (accept) friendships"
   on public.friendships for update
   using (auth.uid() = friend_id or auth.uid() = user_id);
+
+create policy "Users can delete own friendships"
+  on public.friendships for delete
+  using (auth.uid() = user_id or auth.uid() = friend_id);
 
 -- Session summaries (synced from app for leaderboards; no sensitive details)
 create table if not exists public.session_summaries (
@@ -116,6 +124,107 @@ create policy "Users can view own and friends' achievements"
 create policy "Users can insert own achievements"
   on public.user_achievements for insert
   with check (auth.uid() = user_id);
+
+-- Social feed events (progress updates shared with friends)
+create table if not exists public.social_feed_events (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  event_type text not null,
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_social_feed_events_user on public.social_feed_events(user_id);
+create index if not exists idx_social_feed_events_created on public.social_feed_events(created_at desc);
+
+alter table public.social_feed_events enable row level security;
+
+create policy "Users can view own and friends social feed"
+  on public.social_feed_events for select
+  using (
+    auth.uid() = user_id
+    or exists (
+      select 1 from public.friendships f
+      where (f.user_id = auth.uid() and f.friend_id = social_feed_events.user_id and f.status = 'accepted')
+         or (f.friend_id = auth.uid() and f.user_id = social_feed_events.user_id and f.status = 'accepted')
+    )
+  );
+
+create policy "Users can insert own social feed events"
+  on public.social_feed_events for insert
+  with check (auth.uid() = user_id);
+
+-- Skill XP event ledger (powers competitions and public progression feed)
+create table if not exists public.skill_xp_events (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  skill_id text not null,
+  xp_delta integer not null check (xp_delta >= 0),
+  source text not null default 'session_complete',
+  happened_at timestamptz not null default now(),
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_skill_xp_events_user on public.skill_xp_events(user_id);
+create index if not exists idx_skill_xp_events_skill_period on public.skill_xp_events(skill_id, happened_at desc);
+
+alter table public.skill_xp_events enable row level security;
+
+create policy "Users can view own and friends skill xp events"
+  on public.skill_xp_events for select
+  using (
+    auth.uid() = user_id
+    or exists (
+      select 1 from public.friendships f
+      where (f.user_id = auth.uid() and f.friend_id = skill_xp_events.user_id and f.status = 'accepted')
+         or (f.friend_id = auth.uid() and f.user_id = skill_xp_events.user_id and f.status = 'accepted')
+    )
+  );
+
+create policy "Users can insert own skill xp events"
+  on public.skill_xp_events for insert
+  with check (auth.uid() = user_id);
+
+-- Optional persisted competitions and score snapshots
+create table if not exists public.skill_competitions (
+  id uuid primary key default uuid_generate_v4(),
+  period text not null check (period in ('24h', '7d')),
+  skill_id text not null,
+  starts_at timestamptz not null,
+  ends_at timestamptz not null,
+  created_at timestamptz default now(),
+  unique(period, skill_id, starts_at)
+);
+
+create table if not exists public.skill_competition_scores (
+  id uuid primary key default uuid_generate_v4(),
+  competition_id uuid references public.skill_competitions(id) on delete cascade not null,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  score_xp integer not null default 0,
+  rank integer,
+  updated_at timestamptz default now(),
+  unique(competition_id, user_id)
+);
+
+create index if not exists idx_skill_competition_scores_comp on public.skill_competition_scores(competition_id, score_xp desc);
+
+alter table public.skill_competitions enable row level security;
+alter table public.skill_competition_scores enable row level security;
+
+create policy "Users can view competitions"
+  on public.skill_competitions for select
+  using (true);
+
+create policy "Users can view own and friends competition scores"
+  on public.skill_competition_scores for select
+  using (
+    auth.uid() = user_id
+    or exists (
+      select 1 from public.friendships f
+      where (f.user_id = auth.uid() and f.friend_id = skill_competition_scores.user_id and f.status = 'accepted')
+         or (f.friend_id = auth.uid() and f.user_id = skill_competition_scores.user_id and f.status = 'accepted')
+    )
+  );
 
 -- DMs between friends. Enable Realtime in Supabase: Database → Replication → public.messages.
 create table if not exists public.messages (

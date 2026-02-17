@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNotificationStore } from '../../stores/notificationStore'
 
@@ -20,7 +20,9 @@ interface NotificationPanelProps {
 
 export function NotificationPanel({ open, onClose, bellRef }: NotificationPanelProps) {
   const { items, markAllRead, clear } = useNotificationStore()
+  const [filter, setFilter] = useState<'all' | 'update' | 'friend_levelup' | 'progression'>('all')
   const panelRef = useRef<HTMLDivElement>(null)
+  const filteredItems = items.filter((i) => (filter === 'all' ? true : i.type === filter))
 
   useEffect(() => {
     if (open) markAllRead()
@@ -62,13 +64,36 @@ export function NotificationPanel({ open, onClose, bellRef }: NotificationPanelP
               <button onClick={clear} className="text-[10px] text-gray-500 hover:text-gray-300">Clear all</button>
             )}
           </div>
+          <div className="px-3 py-1.5 border-b border-white/[0.06] flex items-center gap-1.5">
+            {(['all', 'update', 'friend_levelup', 'progression'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setFilter(t)}
+                className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                  filter === t
+                    ? 'border-cyber-neon/40 text-cyber-neon bg-cyber-neon/10'
+                    : 'border-white/10 text-gray-500 hover:text-gray-300'
+                }`}
+              >
+                {t === 'all' ? 'All' : t === 'update' ? 'Updates' : t === 'friend_levelup' ? 'Friends' : 'Progress'}
+              </button>
+            ))}
+          </div>
           <div className="flex-1 overflow-auto">
-            {items.length === 0 ? (
+            {filteredItems.length === 0 ? (
               <div className="py-8 text-center">
-                <span className="text-gray-600 text-xs">No notifications yet</span>
+                <span className="text-gray-600 text-xs block">No notifications for this filter.</span>
+                {items.length > 0 && (
+                  <button
+                    onClick={() => setFilter('all')}
+                    className="mt-2 text-[10px] px-2.5 py-1 rounded border border-white/15 text-gray-300 hover:bg-white/5 transition-colors"
+                  >
+                    Show all
+                  </button>
+                )}
               </div>
             ) : (
-              items.map((item) => (
+              filteredItems.map((item) => (
                 <div
                   key={item.id}
                   className="px-3 py-2 flex items-start gap-2 hover:bg-white/[0.02] border-b border-white/[0.03] last:border-0"

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
@@ -8,7 +8,16 @@ import type { AchievementDef } from '../../lib/xp'
 import { useAlertStore } from '../../stores/alertStore'
 import { playClickSound } from '../../lib/sounds'
 import { detectPersona } from '../../lib/persona'
-import { BADGES, FRAMES, FREE_AVATARS, LOCKED_AVATARS, getUnlockedBadges, getUnlockedFrames, getEquippedBadges, getEquippedFrame, equipBadge, unequipBadge, equipFrame, getUnlockedAvatarEmojis } from '../../lib/cosmetics'
+import { BADGES, FRAMES, FREE_AVATARS, LOCKED_AVATARS, getUnlockedBadges, getUnlockedFrames, getEquippedBadges, getEquippedFrame, equipBadge, unequipBadge, equipFrame, getUnlockedAvatarEmojis, unlockCosmeticsFromAchievement } from '../../lib/cosmetics'
+import { syncCosmeticsToSupabase } from '../../services/supabaseSync'
+import { PageHeader } from '../shared/PageHeader'
+import { InlineSuccess } from '../shared/InlineSuccess'
+import { MOTION } from '../../lib/motion'
+import { LOOT_ITEMS, type LootSlot } from '../../lib/loot'
+import { ensureInventoryHydrated, useInventoryStore } from '../../stores/inventoryStore'
+import { DailyMissionsWidget } from '../home/DailyMissionsWidget'
+import { getDailyActivities } from '../../services/dailyActivityService'
+import { AvatarWithFrame } from '../shared/AvatarWithFrame'
 
 const CATEGORY_LABELS: Record<string, string> = {
   grind: '⚡ Grind',
@@ -18,20 +27,29 @@ const CATEGORY_LABELS: Record<string, string> = {
   skill: '⚡ Skills',
 }
 
-type ProfileTab = 'overview' | 'achievements' | 'cosmetics'
+type ProfileTab = 'achievements' | 'cosmetics'
 
 export function ProfilePage({ onBack }: { onBack?: () => void }) {
+  const inventory = useInventoryStore((s) => s.items)
+  const chests = useInventoryStore((s) => s.chests)
+  const equippedBySlot = useInventoryStore((s) => s.equippedBySlot)
+  const grantItemForTesting = useInventoryStore((s) => s.grantItemForTesting)
+  const grantChestForTesting = useInventoryStore((s) => s.grantChestForTesting)
+
   const { user } = useAuthStore()
   const pushAlert = useAlertStore((s) => s.push)
 
   // Profile data
-  const [username, setUsername] = useState('')
+  const [username, setUsername] = useState('Idly')
   const [avatar, setAvatar] = useState('🤖')
-  const [originalUsername, setOriginalUsername] = useState('')
+  const [originalUsername, setOriginalUsername] = useState('Idly')
   const [originalAvatar, setOriginalAvatar] = useState('🤖')
   const [profileLoaded, setProfileLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+  const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false)
+  const [isUsernameEditing, setIsUsernameEditing] = useState(false)
+  const [draftUsername, setDraftUsername] = useState('Idly')
 
   // Stats
   const [totalSkillLevel, setTotalSkillLevel] = useState(0)
@@ -48,17 +66,39 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
   const [unlockedFrameIds, setUnlockedFrameIds] = useState<string[]>([])
 
   // Tab
-  const [activeTab, setActiveTab] = useState<ProfileTab>('overview')
+  const [activeTab, setActiveTab] = useState<ProfileTab>('achievements')
 
   useEffect(() => {
+    if (user) {
+      const cacheKey = `idly_profile_cache_${user.id}`
+      try {
+        const cached = JSON.parse(localStorage.getItem(cacheKey) || '{}') as { username?: string; avatar?: string }
+        if (cached.username || cached.avatar) {
+          const nextUsername = (cached.username || 'Idly').trim()
+          const nextAvatar = cached.avatar || '🤖'
+          setUsername(nextUsername)
+          setAvatar(nextAvatar)
+          setOriginalUsername(nextUsername)
+          setOriginalAvatar(nextAvatar)
+          setProfileLoaded(true)
+        }
+      } catch {
+        // ignore broken cache
+      }
+    }
+
     // Load profile
     if (supabase && user) {
       supabase.from('profiles').select('username, avatar_url').eq('id', user.id).single().then(({ data }) => {
         if (data) {
-          setUsername(data.username || '')
-          setAvatar(data.avatar_url || '🤖')
-          setOriginalUsername(data.username || '')
-          setOriginalAvatar(data.avatar_url || '🤖')
+          const nextUsername = (data.username || 'Idly').trim()
+          const nextAvatar = data.avatar_url || '🤖'
+          setUsername(nextUsername)
+          setAvatar(nextAvatar)
+          setOriginalUsername(nextUsername)
+          setOriginalAvatar(nextAvatar)
+          const cacheKey = `idly_profile_cache_${user.id}`
+          localStorage.setItem(cacheKey, JSON.stringify({ username: nextUsername, avatar: nextAvatar }))
         }
         setProfileLoaded(true)
       }).catch(() => setProfileLoaded(true))
@@ -101,40 +141,99 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
     setEquippedFrameId(getEquippedFrame())
     setUnlockedBadgeIds(getUnlockedBadges())
     setUnlockedFrameIds(getUnlockedFrames())
+    ensureInventoryHydrated()
   }, [user])
 
-  const hasChanges = profileLoaded && (username !== originalUsername || avatar !== originalAvatar)
+  // Ensure cosmetics are unlocked from already-unlocked achievements (source of truth).
+  useEffect(() => {
+    if (!unlockedIds.length) return
+    for (const achievementId of unlockedIds) {
+      unlockCosmeticsFromAchievement(achievementId)
+    }
+    setUnlockedBadgeIds(getUnlockedBadges())
+    setUnlockedFrameIds(getUnlockedFrames())
+  }, [unlockedIds])
 
-  const saveProfile = async () => {
-    if (!supabase || !user || !hasChanges) return
+  useEffect(() => {
+    setDraftUsername(username)
+  }, [username])
+
+  useEffect(() => {
+    setIsAvatarPickerOpen(false)
+    setIsUsernameEditing(false)
+  }, [activeTab])
+
+  useEffect(() => {
+    if (!profileLoaded || !user) return
+    const key = `idly_test_starter_pack_${user.id}_v2`
+    if (localStorage.getItem(key) === '1') return
+    ensureInventoryHydrated()
+    const onePerSlot = new Map<LootSlot, string>()
+    for (const item of LOOT_ITEMS) {
+      if (!onePerSlot.has(item.slot)) onePerSlot.set(item.slot, item.id)
+    }
+    for (const itemId of onePerSlot.values()) {
+      grantItemForTesting(itemId, 1)
+    }
+    grantChestForTesting('common_chest', 7)
+    grantChestForTesting('rare_chest', 5)
+    grantChestForTesting('epic_chest', 3)
+    localStorage.setItem(key, '1')
+    setMessage({ type: 'ok', text: 'Starter pack granted: 4 slot items + 15 chests.' })
+  }, [profileLoaded, user, username, grantItemForTesting, grantChestForTesting])
+
+  const persistProfile = async (nextUsername: string, nextAvatar: string) => {
+    const trimmedUsername = nextUsername.trim()
+    if (!user) return false
+
+    // Always keep local state in sync even if cloud is unavailable.
+    const cacheKey = `idly_profile_cache_${user.id}`
+    const applyLocal = () => {
+      setUsername(trimmedUsername)
+      setAvatar(nextAvatar)
+      setOriginalUsername(trimmedUsername)
+      setOriginalAvatar(nextAvatar)
+      localStorage.setItem(cacheKey, JSON.stringify({ username: trimmedUsername, avatar: nextAvatar }))
+    }
+
+    if (!supabase) {
+      applyLocal()
+      setMessage({ type: 'ok', text: 'Saved locally.' })
+      return true
+    }
+
+    if (trimmedUsername === originalUsername && nextAvatar === originalAvatar) return true
+
     setSaving(true)
     setMessage(null)
-    if (username.trim().length < 3) {
+    if (trimmedUsername.length < 3) {
       setMessage({ type: 'err', text: 'Min 3 characters.' })
       setSaving(false)
-      return
+      return false
     }
-    if (username !== originalUsername) {
-      const { data } = await supabase.from('profiles').select('id').eq('username', username.trim()).limit(1)
+    if (trimmedUsername !== originalUsername) {
+      const { data } = await supabase.from('profiles').select('id').eq('username', trimmedUsername).limit(1)
       if (data && data.length > 0 && data[0].id !== user.id) {
         setMessage({ type: 'err', text: 'Username taken.' })
         setSaving(false)
-        return
+        return false
       }
     }
     const { error } = await supabase.from('profiles').update({
-      username: username.trim(),
-      avatar_url: avatar,
+      username: trimmedUsername,
+      avatar_url: nextAvatar,
       updated_at: new Date().toISOString(),
     }).eq('id', user.id)
     if (error) {
       setMessage({ type: 'err', text: error.message })
+      setSaving(false)
+      return false
     } else {
-      setMessage({ type: 'ok', text: 'Saved!' })
-      setOriginalUsername(username.trim())
-      setOriginalAvatar(avatar)
+      applyLocal()
+      setMessage({ type: 'ok', text: 'Saved.' })
     }
     setSaving(false)
+    return true
   }
 
   const handleClaim = (def: AchievementDef) => {
@@ -145,19 +244,15 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
     pushAlert(def)
   }
 
-  const syncCosmeticsToSupabase = (badges: string[], frame: string | null) => {
-    if (supabase && user) {
-      // Try to sync — columns may not exist yet in Supabase
-      try {
-        supabase.from('profiles').update({
-          equipped_badges: badges,
-          equipped_frame: frame,
-          updated_at: new Date().toISOString(),
-        }).eq('id', user.id).then(() => {})
-      } catch {
-        // columns may not exist — ignore
-      }
-    }
+  const persistCosmeticsToSupabase = (badges: string[], frame: string | null) => {
+    if (!supabase || !user) return
+    const statusTitle = equippedLootItems.find((entry) => entry.item.slot === 'aura')?.item.perkType === 'status_title'
+      ? String(equippedLootItems.find((entry) => entry.item.slot === 'aura')?.item.perkValue ?? '')
+      : null
+    syncCosmeticsToSupabase(badges, frame, {
+      equippedLoot: equippedBySlot as Record<string, string>,
+      statusTitle,
+    }).catch(() => {})
   }
 
   const handleEquipBadge = (badgeId: string) => {
@@ -175,7 +270,7 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
       newBadges = [...equippedBadges, badgeId]
     }
     setEquippedBadges(newBadges)
-    syncCosmeticsToSupabase(newBadges, equippedFrameId)
+    persistCosmeticsToSupabase(newBadges, equippedFrameId)
   }
 
   const handleEquipFrame = (frameId: string) => {
@@ -183,28 +278,40 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
     const newFrame = equippedFrameId === frameId ? null : frameId
     equipFrame(newFrame)
     setEquippedFrameId(newFrame)
-    syncCosmeticsToSupabase(equippedBadges, newFrame)
+    persistCosmeticsToSupabase(equippedBadges, newFrame)
   }
 
   // Find the active frame
   const activeFrame = FRAMES.find(f => f.id === equippedFrameId)
+  const equippedLootItems = (Object.entries(equippedBySlot) as Array<[LootSlot, string]>)
+    .map(([slot, itemId]) => ({ slot, item: LOOT_ITEMS.find((x) => x.id === itemId) }))
+    .filter((entry): entry is { slot: LootSlot; item: (typeof LOOT_ITEMS)[number] } => Boolean(entry.item))
+
+
+  const applyDraftUsername = async () => {
+    const sanitized = draftUsername.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 20)
+    await persistProfile(sanitized || 'Idly', avatar)
+    setDraftUsername(sanitized || 'Idly')
+    setIsUsernameEditing(false)
+  }
+
+  const unlockedAvatarSet = new Set(getUnlockedAvatarEmojis())
+  const bonusAvatars = getUnlockedAvatarEmojis().filter(
+    (a) => !FREE_AVATARS.includes(a) && !LOCKED_AVATARS.some((la) => la.emoji === a),
+  )
 
   const categories = ['grind', 'streak', 'social', 'special', 'skill']
   const unlockedCount = ACHIEVEMENTS.filter(a => unlockedIds.includes(a.id)).length
+  const dailyActivities = useMemo(() => getDailyActivities(), [activeTab, inventory, chests])
+  const hasClaimableQuest = dailyActivities.some((mission) => mission.completed && !mission.claimed)
+  const hasQuestAttention = hasClaimableQuest || dailyActivities.some((mission) => !mission.claimed)
 
   return (
     <div
-      className={`p-4 pb-20 space-y-4 overflow-auto transition-opacity duration-150 ${profileLoaded ? 'opacity-100' : 'opacity-0'}`}
+      className="p-4 pb-20 space-y-4 overflow-auto"
     >
       {/* Header */}
-      <div className="flex items-center gap-3">
-        {onBack && (
-          <button onClick={onBack} className="text-gray-400 hover:text-white transition-colors">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-          </button>
-        )}
-        <h2 className="text-lg font-bold text-white">Profile</h2>
-      </div>
+      <PageHeader title="Profile" onBack={onBack} />
 
       {/* Profile Card */}
       <div className="rounded-2xl bg-gradient-to-br from-discord-card/90 to-discord-card/60 border border-white/10 p-5 relative overflow-hidden">
@@ -213,29 +320,62 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
 
         <div className="relative flex items-center gap-4">
           {/* Avatar with frame */}
-          <div className="relative shrink-0">
-            {activeFrame && (
-              <div
-                className="absolute -inset-1.5 rounded-2xl"
-                style={{
-                  background: activeFrame.gradient,
-                  opacity: 0.8,
-                }}
-              />
+          <button
+            type="button"
+            onClick={() => {
+              playClickSound()
+              setIsAvatarPickerOpen((v) => !v)
+            }}
+            className="relative shrink-0"
+            title="Click to change avatar"
+          >
+            <AvatarWithFrame
+              avatar={profileLoaded ? avatar : '🤖'}
+              frameId={equippedFrameId}
+              sizeClass="w-16 h-16"
+              textClass="text-3xl"
+              roundedClass="rounded-xl"
+              ringInsetClass="-inset-1.5"
+              ringOpacity={0.8}
+            />
+            {!profileLoaded && (
+              <span className="absolute inset-0 m-auto w-8 h-8 rounded-md bg-white/10 animate-pulse" />
             )}
-            <div className={`w-16 h-16 rounded-xl flex items-center justify-center text-3xl relative ${
-              activeFrame ? 'border-2' : 'border border-white/10'
-            } bg-discord-darker`}
-              style={activeFrame ? { borderColor: activeFrame.color } : undefined}
-            >
-              {avatar}
-            </div>
-          </div>
+          </button>
 
           {/* Info */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-white font-bold text-base truncate">{username || 'Idly'}</span>
+              {isUsernameEditing ? (
+                <input
+                  type="text"
+                  value={draftUsername}
+                  onChange={(e) => setDraftUsername(e.target.value)}
+                  onBlur={applyDraftUsername}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') applyDraftUsername()
+                    if (e.key === 'Escape') {
+                      setDraftUsername(username)
+                      setIsUsernameEditing(false)
+                    }
+                  }}
+                  autoFocus
+                  className="text-white font-bold text-base truncate bg-transparent border-b border-cyber-neon/40 focus:border-cyber-neon/80 outline-none"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    playClickSound()
+                    setIsUsernameEditing(true)
+                    setDraftUsername(username)
+                  }}
+                  className="text-white font-bold text-base truncate hover:text-cyber-neon transition-colors"
+                  title="Click to edit username"
+                >
+                  {profileLoaded ? (username || 'Idly') : 'Loading...'}
+                </button>
+              )}
               <span className="text-cyber-neon font-mono text-xs" title="Total skill level">{totalSkillLevel}/{MAX_TOTAL_SKILL_LEVEL}</span>
             </div>
 
@@ -257,19 +397,115 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
                 })}
               </div>
             )}
+            {equippedLootItems.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1 mb-1.5">
+                {equippedLootItems.map(({ slot, item }) => (
+                  <span
+                    key={slot}
+                    className="text-[9px] px-1.5 py-0.5 rounded-md border border-cyber-neon/20 bg-cyber-neon/10 text-cyber-neon"
+                    title={`${slot}: ${item.name}`}
+                  >
+                    {item.icon} {item.name}
+                  </span>
+                ))}
+              </div>
+            )}
 
             {persona && (
               <span className="text-[10px] text-gray-500">{persona.emoji} {persona.label}</span>
             )}
+            <p className="text-[10px] text-gray-600 mt-1">Click avatar or nickname to edit.</p>
           </div>
         </div>
       </div>
 
+      {isAvatarPickerOpen && (
+        <div className="rounded-xl bg-discord-card/90 border border-cyber-neon/20 p-3 space-y-2">
+          <p className="text-[10px] uppercase tracking-wider text-gray-500 font-mono">Choose avatar</p>
+          <div className="flex flex-wrap gap-1.5">
+            {FREE_AVATARS.map((a) => (
+              <button
+                type="button"
+                key={a}
+                onClick={() => {
+                  void persistProfile(username, a)
+                  setIsAvatarPickerOpen(false)
+                  playClickSound()
+                }}
+                className={`w-9 h-9 rounded-lg text-lg flex items-center justify-center transition-all active:scale-90 ${
+                  avatar === a
+                    ? 'bg-cyber-neon/20 border-2 border-cyber-neon shadow-glow-sm'
+                    : 'bg-discord-dark border border-white/10 hover:border-white/20'
+                }`}
+              >
+                {a}
+              </button>
+            ))}
+            {LOCKED_AVATARS.map((la) => {
+              const isUnlocked = unlockedIds.includes(la.achievementId) || unlockedAvatarSet.has(la.emoji)
+              return (
+                <button
+                  type="button"
+                  key={la.emoji}
+                  onClick={() => {
+                    if (!isUnlocked) return
+                    void persistProfile(username, la.emoji)
+                    setIsAvatarPickerOpen(false)
+                    playClickSound()
+                  }}
+                  disabled={!isUnlocked}
+                  title={isUnlocked ? la.emoji : la.unlockHint}
+                  className={`w-9 h-9 rounded-lg text-lg flex items-center justify-center transition-all relative ${
+                    isUnlocked
+                      ? avatar === la.emoji
+                        ? 'bg-cyber-neon/20 border-2 border-cyber-neon shadow-glow-sm active:scale-90'
+                        : 'bg-discord-dark border border-white/10 hover:border-white/20 active:scale-90'
+                      : 'bg-discord-dark/50 border border-white/5 cursor-not-allowed'
+                  }`}
+                >
+                  <span style={{ opacity: isUnlocked ? 1 : 0.25 }}>{la.emoji}</span>
+                  {!isUnlocked && (
+                    <span className="absolute inset-0 flex items-center justify-center text-[10px]">🔒</span>
+                  )}
+                </button>
+              )
+            })}
+            {bonusAvatars.map((a) => (
+              <button
+                type="button"
+                key={a}
+                onClick={() => {
+                  void persistProfile(username, a)
+                  setIsAvatarPickerOpen(false)
+                  playClickSound()
+                }}
+                className={`w-9 h-9 rounded-lg text-lg flex items-center justify-center transition-all active:scale-90 ${
+                  avatar === a
+                    ? 'bg-cyber-neon/20 border-2 border-cyber-neon shadow-glow-sm'
+                    : 'bg-discord-dark border border-white/10 hover:border-white/20'
+                }`}
+              >
+                {a}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {saving && (
+        <p className="text-xs text-center text-cyber-neon/80 font-mono">Saving...</p>
+      )}
+
+      {message && (
+        message.type === 'ok'
+          ? <InlineSuccess message={message.text} className="justify-self-center text-center" />
+          : <p className="text-xs text-center text-discord-red">{message.text}</p>
+      )}
+
       {/* Sub-tabs */}
       <div className="flex gap-1 bg-discord-darker/50 rounded-xl p-1">
         {([
-          { id: 'overview' as const, label: 'Edit', icon: '✏️' },
-          { id: 'achievements' as const, label: `Loot (${unlockedCount}/${ACHIEVEMENTS.length})`, icon: '🏆' },
+          { id: 'achievements' as const, label: `Achievements & quests (${unlockedCount}/${ACHIEVEMENTS.length})`, icon: '🏆' },
           { id: 'cosmetics' as const, label: 'Cosmetics', icon: '✨' },
         ]).map(tab => (
           <button
@@ -283,117 +519,17 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
           >
             <span className="mr-1">{tab.icon}</span>
             {tab.label}
+            {tab.id === 'achievements' && hasQuestAttention && (
+              <span
+                className={`ml-1.5 inline-block w-1.5 h-1.5 rounded-full ${hasClaimableQuest ? 'bg-cyber-neon' : 'bg-orange-400'}`}
+                title={hasClaimableQuest ? 'Quests ready to claim' : 'Daily quests available'}
+              />
+            )}
           </button>
         ))}
       </div>
 
       <AnimatePresence mode="wait">
-        {/* EDIT TAB */}
-        {activeTab === 'overview' && (
-          <motion.div
-            key="edit"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className="space-y-3"
-          >
-            {/* Avatar selection */}
-            <div className="rounded-xl bg-discord-card/80 border border-white/10 p-4 space-y-3">
-              <p className="text-[10px] uppercase tracking-wider text-gray-500 font-mono">Avatar</p>
-              <div className="flex flex-wrap gap-1.5">
-                {/* Free avatars */}
-                {FREE_AVATARS.map((a) => (
-                  <button
-                    type="button"
-                    key={a}
-                    onClick={() => { setAvatar(a); playClickSound() }}
-                    className={`w-9 h-9 rounded-lg text-lg flex items-center justify-center transition-all active:scale-90 ${
-                      avatar === a
-                        ? 'bg-cyber-neon/20 border-2 border-cyber-neon shadow-glow-sm'
-                        : 'bg-discord-dark border border-white/10 hover:border-white/20'
-                    }`}
-                  >
-                    {a}
-                  </button>
-                ))}
-                {/* Locked avatars */}
-                {LOCKED_AVATARS.map((la) => {
-                  const isUnlocked = unlockedIds.includes(la.achievementId) || getUnlockedAvatarEmojis().includes(la.emoji)
-                  return (
-                    <button
-                      type="button"
-                      key={la.emoji}
-                      onClick={() => { if (isUnlocked) { setAvatar(la.emoji); playClickSound() } }}
-                      disabled={!isUnlocked}
-                      title={isUnlocked ? la.emoji : la.unlockHint}
-                      className={`w-9 h-9 rounded-lg text-lg flex items-center justify-center transition-all relative ${
-                        isUnlocked
-                          ? avatar === la.emoji
-                            ? 'bg-cyber-neon/20 border-2 border-cyber-neon shadow-glow-sm active:scale-90'
-                            : 'bg-discord-dark border border-white/10 hover:border-white/20 active:scale-90'
-                          : 'bg-discord-dark/50 border border-white/5 cursor-not-allowed'
-                      }`}
-                    >
-                      <span style={{ opacity: isUnlocked ? 1 : 0.25 }}>{la.emoji}</span>
-                      {!isUnlocked && (
-                        <span className="absolute inset-0 flex items-center justify-center text-[10px]">🔒</span>
-                      )}
-                    </button>
-                  )
-                })}
-                {/* Bonus avatars (unlocked outside base set) */}
-                {getUnlockedAvatarEmojis()
-                  .filter(a => !FREE_AVATARS.includes(a) && !LOCKED_AVATARS.some(la => la.emoji === a))
-                  .map((a) => (
-                    <button
-                      type="button"
-                      key={a}
-                      onClick={() => { setAvatar(a); playClickSound() }}
-                      className={`w-9 h-9 rounded-lg text-lg flex items-center justify-center transition-all active:scale-90 ${
-                        avatar === a
-                          ? 'bg-cyber-neon/20 border-2 border-cyber-neon shadow-glow-sm'
-                          : 'bg-discord-dark border border-white/10 hover:border-white/20'
-                      }`}
-                    >
-                      {a}
-                    </button>
-                  ))}
-              </div>
-            </div>
-
-            {/* Username */}
-            <div className="rounded-xl bg-discord-card/80 border border-white/10 p-4 space-y-3">
-              <p className="text-[10px] uppercase tracking-wider text-gray-500 font-mono">Username</p>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 20))}
-                className="w-full rounded-lg bg-discord-darker border border-white/10 px-3 py-2 text-white text-sm focus:border-cyber-neon/50 outline-none transition-colors"
-                placeholder="Your username"
-              />
-            </div>
-
-            {hasChanges && (
-              <motion.button
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                whileTap={{ scale: 0.97 }}
-                onClick={saveProfile}
-                disabled={saving}
-                className="w-full py-2.5 rounded-xl bg-cyber-neon text-discord-darker font-bold text-sm hover:shadow-glow disabled:opacity-50 transition-shadow"
-              >
-                {saving ? 'Saving...' : 'Save Changes'}
-              </motion.button>
-            )}
-
-            {message && (
-              <p className={`text-xs text-center ${message.type === 'ok' ? 'text-cyber-neon' : 'text-discord-red'}`}>
-                {message.text}
-              </p>
-            )}
-          </motion.div>
-        )}
-
         {/* ACHIEVEMENTS TAB */}
         {activeTab === 'achievements' && (
           <motion.div
@@ -403,6 +539,9 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
             exit={{ opacity: 0, y: -8 }}
             className="space-y-4"
           >
+            <div className="rounded-xl border border-white/10 bg-discord-card/50 p-2.5">
+              <DailyMissionsWidget />
+            </div>
             {categories.map((cat) => {
               const items = ACHIEVEMENTS.filter((a) => a.category === cat)
               if (items.length === 0) return null
@@ -485,7 +624,7 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
               <p className="text-[10px] text-gray-500">Shown next to your name. Tap to equip/unequip.</p>
               <div className="grid grid-cols-2 gap-2">
                 {BADGES.map((badge) => {
-                  const isUnlocked = unlockedBadgeIds.includes(badge.id)
+                  const isUnlocked = unlockedBadgeIds.includes(badge.id) || (badge.achievementId ? unlockedIds.includes(badge.achievementId) : false)
                   const isEquipped = equippedBadges.includes(badge.id)
                   return (
                     <button
@@ -553,7 +692,7 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
               <p className="text-[10px] text-gray-500">Exclusive borders. Tap to equip.</p>
               <div className="grid grid-cols-2 gap-3">
                 {FRAMES.map((frame) => {
-                  const isUnlocked = unlockedFrameIds.includes(frame.id)
+                  const isUnlocked = unlockedFrameIds.includes(frame.id) || (frame.achievementId ? unlockedIds.includes(frame.achievementId) : false)
                   const isActive = equippedFrameId === frame.id
                   const rarityColors: Record<string, string> = { Rare: '#4FC3F7', Epic: '#C084FC', Legendary: '#FFD700' }
                   const styleClass = `frame-style-${frame.style}`
@@ -634,6 +773,7 @@ export function ProfilePage({ onBack }: { onBack?: () => void }) {
                 })}
               </div>
             </div>
+
           </motion.div>
         )}
       </AnimatePresence>

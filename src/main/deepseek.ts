@@ -221,3 +221,77 @@ Paragraph 4 — VERDICT: Rate overall as one word in caps (ELITE / LOCKED IN / P
   if (!text) throw new Error('Empty response from DeepSeek')
   return text
 }
+
+export interface LabelRefineInput {
+  app_name: string
+  window_title: string
+  current_category: string
+}
+
+export interface LabelRefineOutput {
+  app_name: string
+  window_title: string
+  refined_category: string
+  confidence: number
+  reason: string
+}
+
+export async function refineActivityLabels(items: LabelRefineInput[], apiKey: string): Promise<LabelRefineOutput[]> {
+  if (items.length === 0) return []
+  const compact = items.slice(0, 25).map((it, idx) => ({
+    idx,
+    app: it.app_name,
+    title: it.window_title.slice(0, 140),
+    current: it.current_category,
+  }))
+
+  const userContent = `Classify each item by browser activity context.
+Allowed categories: coding, design, learning, social, music, browsing, games, creative, other.
+Return strict JSON array, each item:
+{"idx":number,"refined_category":string,"confidence":number,"reason":string}
+
+Items:
+${JSON.stringify(compact)}`
+
+  const res = await fetch(DEEPSEEK_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages: [
+        {
+          role: 'system',
+          content: 'You classify ambiguous app/window titles for productivity tracking. Respond only with valid JSON array. No markdown.',
+        },
+        { role: 'user', content: userContent },
+      ],
+      stream: false,
+      max_tokens: 700,
+    }),
+  })
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`DeepSeek API error: ${res.status} ${err}`)
+  }
+
+  const result = (await res.json()) as { choices?: { message?: { content?: string } }[] }
+  const content = result.choices?.[0]?.message?.content?.trim()
+  if (!content) throw new Error('Empty response from DeepSeek')
+
+  const normalized = content.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '')
+  const parsed = JSON.parse(normalized) as { idx: number; refined_category: string; confidence?: number; reason?: string }[]
+  const allowed = new Set(['coding', 'design', 'learning', 'social', 'music', 'browsing', 'games', 'creative', 'other'])
+  return parsed
+    .filter((r) => Number.isInteger(r.idx) && r.idx >= 0 && r.idx < compact.length && allowed.has(r.refined_category))
+    .map((r) => ({
+      app_name: items[r.idx].app_name,
+      window_title: items[r.idx].window_title,
+      refined_category: r.refined_category,
+      confidence: Math.max(0, Math.min(1, typeof r.confidence === 'number' ? r.confidence : 0.7)),
+      reason: (r.reason || 'AI context refinement').slice(0, 160),
+    }))
+}

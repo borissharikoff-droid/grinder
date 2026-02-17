@@ -4,6 +4,8 @@
 
 import { computeSessionSkillXP, skillLevelFromXP } from '../lib/skills'
 import type { SkillXPGain } from '../stores/sessionStore'
+import { getEquippedPerkRuntime } from '../lib/loot'
+import { ensureInventoryHydrated, useInventoryStore } from '../stores/inventoryStore'
 
 interface SegmentForXP {
   category: string
@@ -17,21 +19,26 @@ export async function computeAndSaveSkillXPElectron(
   segments: SegmentForXP[],
 ): Promise<SkillXPGain[]> {
   const gainsMap = computeSessionSkillXP(segments)
+  ensureInventoryHydrated()
+  const equipped = useInventoryStore.getState().equippedBySlot
+  const perk = getEquippedPerkRuntime(equipped)
   const skillXPGains: SkillXPGain[] = []
 
   if (!api.db.addSkillXP || !api.db.getSkillXP) return skillXPGains
 
   for (const [skillId, xp] of Object.entries(gainsMap)) {
     if (xp <= 0) continue
+    const multiplier = perk.skillXpMultiplierBySkill[skillId] ?? 1
+    const adjustedXp = Math.max(1, Math.floor(xp * multiplier))
     const before = await api.db.getSkillXP(skillId)
     const levelBefore = skillLevelFromXP(before)
-    await api.db.addSkillXP(skillId, xp)
-    const after = before + xp
+    await api.db.addSkillXP(skillId, adjustedXp)
+    const after = before + adjustedXp
     const levelAfter = skillLevelFromXP(after)
-    skillXPGains.push({ skillId, xp, levelBefore, levelAfter })
+    skillXPGains.push({ skillId, xp: adjustedXp, levelBefore, levelAfter })
     // Log to skill_xp_log for trends
     if (api.db.addSkillXPLog) {
-      api.db.addSkillXPLog(skillId, xp).catch(() => {})
+      api.db.addSkillXPLog(skillId, adjustedXp).catch(() => {})
     }
   }
 
@@ -45,15 +52,20 @@ export function computeAndSaveSkillXPBrowser(
 ): SkillXPGain[] {
   const segs: SegmentForXP[] = [{ category: 'browsing', startTime: sessionStartTime, endTime }]
   const gainsMap = computeSessionSkillXP(segs)
+  ensureInventoryHydrated()
+  const equipped = useInventoryStore.getState().equippedBySlot
+  const perk = getEquippedPerkRuntime(equipped)
   const stored = JSON.parse(localStorage.getItem('idly_skill_xp') || '{}') as Record<string, number>
   const gains: SkillXPGain[] = []
 
   for (const [skillId, xp] of Object.entries(gainsMap)) {
     if (xp <= 0) continue
+    const multiplier = perk.skillXpMultiplierBySkill[skillId] ?? 1
+    const adjustedXp = Math.max(1, Math.floor(xp * multiplier))
     const before = stored[skillId] ?? 0
     const levelBefore = skillLevelFromXP(before)
-    stored[skillId] = before + xp
-    gains.push({ skillId, xp, levelBefore, levelAfter: skillLevelFromXP(stored[skillId]) })
+    stored[skillId] = before + adjustedXp
+    gains.push({ skillId, xp: adjustedXp, levelBefore, levelAfter: skillLevelFromXP(stored[skillId]) })
   }
 
   localStorage.setItem('idly_skill_xp', JSON.stringify(stored))

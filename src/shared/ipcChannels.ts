@@ -48,6 +48,12 @@ export const IPC_CHANNELS = {
     deleteTask: 'db:deleteTask',
     clearDoneTasks: 'db:clearDoneTasks',
     getDailyTotals: 'db:getDailyTotals',
+    getSessionsPage: 'db:getSessionsPage',
+    getDistractionMetrics: 'db:getDistractionMetrics',
+    getFocusBlocks: 'db:getFocusBlocks',
+    getSiteUsageStats: 'db:getSiteUsageStats',
+    getCategoryTrends: 'db:getCategoryTrends',
+    getPeriodComparison: 'db:getPeriodComparison',
     addSkillXPLog: 'db:addSkillXPLog',
     getSkillXPHistory: 'db:getSkillXPHistory',
     saveCheckpoint: 'db:saveCheckpoint',
@@ -57,6 +63,7 @@ export const IPC_CHANNELS = {
   ai: {
     analyzeSession: 'ai:analyzeSession',
     analyzeOverview: 'ai:analyzeOverview',
+    refineActivityLabels: 'ai:refineActivityLabels',
   },
   settings: {
     getAutoLaunch: 'settings:getAutoLaunch',

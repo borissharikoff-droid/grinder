@@ -25,26 +25,6 @@ export const BADGES: Badge[] = [
     achievementId: 'streak_2',
   },
   {
-    id: 'lightning',
-    name: 'Streak Master',
-    label: 'STREAK',
-    icon: '⚡',
-    color: '#FFD700',
-    description: '7-day streak achieved',
-    unlockHint: 'Get a 7-day streak',
-    achievementId: 'streak_7',
-  },
-  {
-    id: 'unstoppable',
-    name: 'Unstoppable',
-    label: 'UNSTOP',
-    icon: '🌟',
-    color: '#E040FB',
-    description: '30-day streak achieved',
-    unlockHint: 'Get a 30-day streak',
-    achievementId: 'streak_30',
-  },
-  {
     id: 'night_owl',
     name: 'Night Owl',
     label: 'OWL',
@@ -65,36 +45,6 @@ export const BADGES: Badge[] = [
     achievementId: 'early_bird',
   },
   {
-    id: 'dedicated',
-    name: 'Dedicated',
-    label: 'IDLY',
-    icon: '💎',
-    color: '#4FC3F7',
-    description: '10 sessions completed',
-    unlockHint: 'Complete 10 sessions',
-    achievementId: 'ten_sessions',
-  },
-  {
-    id: 'lord',
-    name: 'Grind Lord',
-    label: 'LORD',
-    icon: '👑',
-    color: '#FFD700',
-    description: '50 sessions completed',
-    unlockHint: 'Complete 50 sessions',
-    achievementId: 'fifty_sessions',
-  },
-  {
-    id: 'marathon',
-    name: 'Marathon',
-    label: 'MARATHON',
-    icon: '🏃',
-    color: '#66BB6A',
-    description: '2+ hour session without breaks',
-    unlockHint: 'Grind 2+ hours non-stop',
-    achievementId: 'marathon',
-  },
-  {
     id: 'social',
     name: 'Social Butterfly',
     label: 'SOCIAL',
@@ -103,16 +53,6 @@ export const BADGES: Badge[] = [
     description: '10 friends added',
     unlockHint: 'Add 10 friends',
     achievementId: 'social_butterfly',
-  },
-  {
-    id: 'polymath',
-    name: 'Polymath',
-    label: 'POLY',
-    icon: '🌟',
-    color: '#AED581',
-    description: '3 skills at Lv.25+',
-    unlockHint: 'Get 3 skills to Lv.25+',
-    achievementId: 'polymath',
   },
 ]
 
@@ -221,13 +161,36 @@ export const FRAMES: Frame[] = [
 export const FREE_AVATARS = ['🐺', '🦊', '🐱', '🐼', '🐸', '🤖']
 
 export const LOCKED_AVATARS: { emoji: string; unlockHint: string; achievementId: string }[] = [
-  { emoji: '🔥', unlockHint: '2-day streak', achievementId: 'streak_2' },
-  { emoji: '💀', unlockHint: '50 sessions', achievementId: 'fifty_sessions' },
-  { emoji: '👾', unlockHint: '10 sessions', achievementId: 'ten_sessions' },
   { emoji: '🦁', unlockHint: '2h+ session', achievementId: 'marathon' },
-  { emoji: '🐙', unlockHint: 'Night Owl', achievementId: 'night_owl' },
-  { emoji: '🦉', unlockHint: 'Early Bird', achievementId: 'early_bird' },
+  { emoji: '🦉', unlockHint: 'Night Owl', achievementId: 'night_owl' },
+  { emoji: '🐤', unlockHint: 'Early Bird', achievementId: 'early_bird' },
 ]
+
+type AchievementCosmeticUnlock = {
+  badgeId?: string
+  frameId?: string
+  avatarEmoji?: string
+}
+
+/**
+ * Canonical source of achievement -> cosmetic unlock mapping.
+ * Keep one strong cosmetic unlock per milestone unless intentionally tiered.
+ */
+export const ACHIEVEMENT_COSMETIC_UNLOCKS: Record<string, AchievementCosmeticUnlock> = {
+  streak_2: { badgeId: 'fire' },
+  streak_7: { frameId: 'ember' },
+  streak_14: { frameId: 'blaze' },
+  streak_30: { frameId: 'fire' },
+  night_owl: { badgeId: 'night_owl' },
+  early_bird: { badgeId: 'early_bird' },
+  ten_sessions: { frameId: 'diamond' },
+  fifty_sessions: { frameId: 'crown' },
+  marathon: { avatarEmoji: '🦁' },
+  social_butterfly: { badgeId: 'social' },
+  skill_developer_50: { frameId: 'code' },
+  skill_designer_50: { frameId: 'art' },
+  polymath: { frameId: 'star' },
+}
 
 // ─── LOCAL STORAGE HELPERS ────────────────────────────────
 
@@ -271,28 +234,27 @@ export function getUnlockedAvatarEmojis(): string[] {
 
 /** Call when an achievement is unlocked — checks if it grants a badge, frame, or avatar */
 export function unlockCosmeticsFromAchievement(achievementId: string): void {
-  // Check badges
-  const badge = BADGES.find(b => b.achievementId === achievementId)
-  if (badge) {
+  const unlock = ACHIEVEMENT_COSMETIC_UNLOCKS[achievementId]
+  if (!unlock) return
+
+  if (unlock.badgeId) {
     const current = getUnlockedBadges()
-    if (!current.includes(badge.id)) {
-      localStorage.setItem(STORAGE_UNLOCKED_BADGES, JSON.stringify([...current, badge.id]))
+    if (!current.includes(unlock.badgeId)) {
+      localStorage.setItem(STORAGE_UNLOCKED_BADGES, JSON.stringify([...current, unlock.badgeId]))
     }
   }
-  // Check frames
-  const frame = FRAMES.find(f => f.achievementId === achievementId)
-  if (frame) {
+
+  if (unlock.frameId) {
     const current = getUnlockedFrames()
-    if (!current.includes(frame.id)) {
-      localStorage.setItem(STORAGE_UNLOCKED_FRAMES, JSON.stringify([...current, frame.id]))
+    if (!current.includes(unlock.frameId)) {
+      localStorage.setItem(STORAGE_UNLOCKED_FRAMES, JSON.stringify([...current, unlock.frameId]))
     }
   }
-  // Check locked avatars
-  const lockedAvatar = LOCKED_AVATARS.find(a => a.achievementId === achievementId)
-  if (lockedAvatar) {
+
+  if (unlock.avatarEmoji) {
     const current = getUnlockedAvatarEmojis()
-    if (!current.includes(lockedAvatar.emoji)) {
-      localStorage.setItem('idly_unlocked_avatars', JSON.stringify([...current, lockedAvatar.emoji]))
+    if (!current.includes(unlock.avatarEmoji)) {
+      localStorage.setItem('idly_unlocked_avatars', JSON.stringify([...current, unlock.avatarEmoji]))
     }
   }
 }

@@ -136,6 +136,31 @@ export function playAchievementSound() {
   })
 }
 
+export function playLootRaritySound(rarity: string) {
+  loadSettings()
+  if (cachedMuted) return
+  const key = String(rarity || '').toLowerCase()
+  if (key === 'legendary' || key === 'mythical') {
+    ;[784, 988, 1319, 1568].forEach((freq, i) => {
+      setTimeout(() => playTone(freq, 0.2, 'triangle', cachedVolume * 1.05), i * 85)
+    })
+    return
+  }
+  if (key === 'epic') {
+    ;[659, 880, 1175].forEach((freq, i) => {
+      setTimeout(() => playTone(freq, 0.18, 'triangle', cachedVolume), i * 80)
+    })
+    return
+  }
+  if (key === 'rare') {
+    ;[587, 740].forEach((freq, i) => {
+      setTimeout(() => playTone(freq, 0.16, 'sine', cachedVolume * 0.9), i * 70)
+    })
+    return
+  }
+  playTone(523, 0.12, 'sine', cachedVolume * 0.75)
+}
+
 export function playPauseSound() {
   loadSettings()
   if (cachedMuted) return

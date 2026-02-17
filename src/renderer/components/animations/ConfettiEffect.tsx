@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react'
-
-const COLORS = ['#00ff88', '#5865F2', '#ed4245', '#faa61a', '#57F287', '#ff6bff', '#00d4ff', '#ffeb3b']
+import { CONFETTI_COLORS } from '../../lib/uiConstants'
 const PARTICLE_COUNT = 50
 
 interface Particle {
@@ -37,7 +36,7 @@ export function ConfettiEffect() {
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed - 6,
         size: 4 + Math.random() * 6,
-        color: COLORS[Math.floor(Math.random() * COLORS.length)],
+        color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
         rotation: Math.random() * 360,
         rotationSpeed: (Math.random() - 0.5) * 10,
         opacity: 1,

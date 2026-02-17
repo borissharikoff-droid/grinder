@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ProfileBar } from './ProfileBar'
 import { Timer } from './Timer'
@@ -9,10 +9,16 @@ import { MotivationBanner } from './MotivationBanner'
 import { WelcomeBanner } from './WelcomeBanner'
 import { GoalWidget } from './GoalWidget'
 import { useSessionStore } from '../../stores/sessionStore'
+import { MOTION } from '../../lib/motion'
+import { useNotificationStore } from '../../stores/notificationStore'
 
 interface HomePageProps {
   onNavigateProfile: () => void
+  onNavigateInventory: () => void
 }
+
+// Used to distinguish "previous run was interrupted" from active checkpoint of this app run.
+const APP_LAUNCHED_AT = Date.now()
 
 function formatRecoveryDuration(secs: number): string {
   const h = Math.floor(secs / 3600)
@@ -20,26 +26,37 @@ function formatRecoveryDuration(secs: number): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m`
 }
 
-export function HomePage({ onNavigateProfile }: HomePageProps) {
+export function HomePage({ onNavigateProfile, onNavigateInventory }: HomePageProps) {
   const { showComplete, status } = useSessionStore()
+  const pushNotification = useNotificationStore((s) => s.push)
   const [showWelcome, setShowWelcome] = useState(false)
-  const [checkpoint, setCheckpoint] = useState<{ elapsed_seconds: number; updated_at: number } | null>(null)
+  const notifiedCheckpointUpdatedAtRef = useRef<number | null>(null)
 
-  // Check for crash recovery checkpoint on mount
+  // Check for crash recovery checkpoint only when app is idle.
+  // We only show checkpoints that were saved BEFORE current app launch.
   useEffect(() => {
+    if (status !== 'idle') {
+      return
+    }
     const api = window.electronAPI
     if (!api?.db?.getCheckpoint) return
     api.db.getCheckpoint().then((cp) => {
-      if (cp && cp.elapsed_seconds >= 60) {
-        setCheckpoint({ elapsed_seconds: cp.elapsed_seconds, updated_at: cp.updated_at })
+      const belongsToPreviousRun = !!cp && cp.updated_at < (APP_LAUNCHED_AT - 5000)
+      if (cp && cp.elapsed_seconds >= 60 && belongsToPreviousRun) {
+        if (notifiedCheckpointUpdatedAtRef.current === cp.updated_at) return
+        notifiedCheckpointUpdatedAtRef.current = cp.updated_at
+        pushNotification({
+          type: 'progression',
+          icon: '⚠️',
+          title: 'Session was interrupted',
+          body: `Last session ran for ${formatRecoveryDuration(cp.elapsed_seconds)}. Progress is saved and ready to continue.`,
+        })
+        if (api.db.clearCheckpoint) {
+          api.db.clearCheckpoint().catch(() => {})
+        }
       }
     }).catch(() => {})
-  }, [])
-
-  const dismissCheckpoint = () => {
-    setCheckpoint(null)
-    window.electronAPI?.db?.clearCheckpoint?.().catch(() => {})
-  }
+  }, [status, pushNotification])
 
   useEffect(() => {
     const welcomed = localStorage.getItem('idly_welcomed')
@@ -62,31 +79,16 @@ export function HomePage({ onNavigateProfile }: HomePageProps) {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <ProfileBar onNavigateProfile={onNavigateProfile} />
+    <motion.div
+      initial={{ opacity: MOTION.page.initial.opacity }}
+      animate={{ opacity: MOTION.page.animate.opacity }}
+      exit={{ opacity: MOTION.page.exit.opacity }}
+      transition={{ duration: MOTION.duration.base, ease: MOTION.easing }}
+      className="flex flex-col h-full"
+    >
+      <ProfileBar onNavigateProfile={onNavigateProfile} onNavigateInventory={onNavigateInventory} />
 
       <div className="flex-1 flex flex-col items-center justify-center pb-4 px-4 gap-6">
-        {/* Crash recovery banner */}
-        {checkpoint && status === 'idle' && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="w-full max-w-xs rounded-xl bg-discord-card border border-orange-500/30 p-3 text-center"
-          >
-            <p className="text-xs text-orange-400 font-medium mb-1">
-              Previous session interrupted ({formatRecoveryDuration(checkpoint.elapsed_seconds)})
-            </p>
-            <div className="flex justify-center gap-2">
-              <button
-                onClick={dismissCheckpoint}
-                className="text-[10px] px-3 py-1 rounded-lg bg-white/5 text-gray-400 hover:text-white transition-colors"
-              >
-                Dismiss
-              </button>
-            </div>
-          </motion.div>
-        )}
-
         {showWelcome && status === 'idle' ? (
           <WelcomeBanner onDismiss={handleDismissWelcome} />
         ) : (
@@ -105,7 +107,7 @@ export function HomePage({ onNavigateProfile }: HomePageProps) {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 8 }}
-                transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                transition={{ duration: MOTION.duration.slow, ease: MOTION.easing }}
                 className="flex flex-col items-center gap-3"
               >
                 <CurrentActivity />
@@ -124,6 +126,6 @@ export function HomePage({ onNavigateProfile }: HomePageProps) {
         {showComplete && <SessionComplete />}
       </AnimatePresence>
 
-    </div>
+    </motion.div>
   )
 }

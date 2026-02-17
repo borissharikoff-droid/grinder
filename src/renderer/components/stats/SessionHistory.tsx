@@ -3,7 +3,7 @@ import type { SessionRecord } from './StatsPage'
 
 function formatDate(ts: number): string {
   const d = new Date(ts)
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function formatDuration(seconds: number): string {

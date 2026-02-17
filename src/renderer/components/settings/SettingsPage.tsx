@@ -4,6 +4,9 @@ import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
 import { useSessionStore } from '../../stores/sessionStore'
 import { getSoundSettings, setSoundVolume, setSoundMuted, playClickSound } from '../../lib/sounds'
+import { MOTION } from '../../lib/motion'
+import { PageHeader } from '../shared/PageHeader'
+import { InlineSuccess } from '../shared/InlineSuccess'
 
 export function SettingsPage() {
   const { user, signOut } = useAuthStore()
@@ -127,12 +130,12 @@ export function SettingsPage() {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -6 }}
+      initial={MOTION.page.initial}
+      animate={MOTION.page.animate}
+      exit={MOTION.page.exit}
       className="p-4 pb-2 space-y-4"
     >
-      <h2 className="text-lg font-bold text-white">Settings</h2>
+      <PageHeader title="Settings" />
 
       {/* Sound Settings */}
       <Section id="sound" title="sound" open={openSections.has('sound')} onToggle={toggleSection}>
@@ -249,14 +252,14 @@ export function SettingsPage() {
         <p className="text-xs text-gray-500">Download your grind history. Flex with data.</p>
         <div className="flex gap-2">
           <motion.button
-            whileTap={{ scale: 0.97 }}
+            whileTap={MOTION.interactive.tap}
             onClick={() => handleExport('json')}
             className="flex-1 py-2 rounded-lg bg-discord-darker border border-white/10 text-sm text-white font-medium hover:border-white/20 transition-colors"
           >
             Export JSON
           </motion.button>
           <motion.button
-            whileTap={{ scale: 0.97 }}
+            whileTap={MOTION.interactive.tap}
             onClick={() => handleExport('csv')}
             className="flex-1 py-2 rounded-lg bg-discord-darker border border-white/10 text-sm text-white font-medium hover:border-white/20 transition-colors"
           >
@@ -264,16 +267,16 @@ export function SettingsPage() {
           </motion.button>
         </div>
         {message && (
-          <p className={`text-xs ${message.type === 'ok' ? 'text-cyber-neon' : 'text-discord-red'}`}>
-            {message.text}
-          </p>
+          message.type === 'ok'
+            ? <InlineSuccess message={message.text} />
+            : <p className="text-xs text-discord-red">{message.text}</p>
         )}
       </Section>
 
       {/* Sign Out */}
       {supabase && user && (
         <motion.button
-          whileTap={{ scale: 0.97 }}
+          whileTap={MOTION.interactive.tap}
           onClick={() => signOut()}
           className="w-full py-2.5 rounded-xl bg-discord-red/20 border border-discord-red/30 text-discord-red font-semibold text-sm hover:bg-discord-red/30 transition-colors"
         >

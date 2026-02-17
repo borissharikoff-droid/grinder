@@ -163,7 +163,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
               draggable={false}
               transition={{ type: 'spring', damping: 20, stiffness: 200 }}
             />
-            <h1 className="text-2xl font-mono font-bold text-[#8b5cf6] mb-1 tracking-wider">
+            <h1 className="text-2xl font-mono font-bold text-discord-purple mb-1 tracking-wider">
               idly
             </h1>
             <p className="text-gray-400 text-xs">

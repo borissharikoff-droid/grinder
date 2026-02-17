@@ -52,12 +52,50 @@ export interface ActivityRow {
   keystrokes: number
 }
 
+interface PeriodTotals {
+  total_seconds: number
+  sessions_count: number
+  total_keystrokes: number
+}
+
 export function getDatabaseApi() {
   const database = getDb()
+  const isFocusCategory = (category: string) => ['coding', 'design', 'creative', 'learning'].includes(category)
+  const isDistractionCategory = (category: string) => ['social', 'games', 'other'].includes(category)
+  const extractDomain = (title: string): string | null => {
+    const hostLike = title.match(/\b([a-z0-9-]+\.)+[a-z]{2,}\b/i)?.[0]
+    if (!hostLike) return null
+    const host = hostLike.toLowerCase().replace(/^www\./, '')
+    // Ignore common app/file noise that looks like a domain.
+    if (host.endsWith('.exe') || host.endsWith('.dll')) return null
+    return host
+  }
+  const getPeriodTotals = (fromMs: number, toMs: number): PeriodTotals => {
+    const sessionRow = database.prepare(`
+      SELECT COALESCE(SUM(duration_seconds), 0) as total_seconds, COUNT(*) as sessions_count
+      FROM sessions
+      WHERE start_time >= ? AND start_time < ?
+    `).get(fromMs, toMs) as { total_seconds: number; sessions_count: number }
+    const keysRow = database.prepare(`
+      SELECT COALESCE(SUM(keystrokes), 0) as total_keystrokes
+      FROM activities
+      WHERE start_time >= ? AND start_time < ?
+    `).get(fromMs, toMs) as { total_keystrokes: number }
+    return {
+      total_seconds: sessionRow.total_seconds,
+      sessions_count: sessionRow.sessions_count,
+      total_keystrokes: keysRow.total_keystrokes,
+    }
+  }
+
   return {
     getSessions(limit = 50): SessionRow[] {
       const stmt = database.prepare('SELECT * FROM sessions ORDER BY start_time DESC LIMIT ?')
       return stmt.all(limit) as SessionRow[]
+    },
+    getSessionsPage(limit = 25, offset = 0, sinceMs = 0): SessionRow[] {
+      const stmt = database.prepare('SELECT * FROM sessions WHERE start_time >= ? ORDER BY start_time DESC LIMIT ? OFFSET ?')
+      return stmt.all(sinceMs, limit, offset) as SessionRow[]
     },
     getSessionById(id: string): SessionRow | undefined {
       const stmt = database.prepare('SELECT * FROM sessions WHERE id = ?')
@@ -138,7 +176,7 @@ export function getDatabaseApi() {
         SELECT app_name, category, SUM(end_time - start_time) as total_ms
         FROM activities
         WHERE start_time >= ? AND app_name IS NOT NULL
-        GROUP BY app_name
+        GROUP BY app_name, category
         ORDER BY total_ms DESC
       `).all(since) as { app_name: string; category: string; total_ms: number }[]
     },
@@ -191,7 +229,7 @@ export function getDatabaseApi() {
         SELECT app_name, window_title, category, SUM(end_time - start_time) as total_ms
         FROM activities
         WHERE start_time >= ? AND app_name IS NOT NULL AND window_title IS NOT NULL AND window_title != ''
-        GROUP BY app_name, window_title
+        GROUP BY app_name, window_title, category
         ORDER BY total_ms DESC
       `).all(since) as { app_name: string; window_title: string; category: string; total_ms: number }[]
     },
@@ -299,15 +337,226 @@ export function getDatabaseApi() {
       const sinceMs = since.getTime()
       return database.prepare(`
         SELECT 
-          date(start_time / 1000, 'unixepoch', 'localtime') as date,
+          day as date,
           COALESCE(SUM(duration_seconds), 0) as total_seconds,
-          0 as total_keystrokes,
+          COALESCE((
+            SELECT SUM(a.keystrokes)
+            FROM activities a
+            WHERE date(a.start_time / 1000, 'unixepoch', 'localtime') = day
+          ), 0) as total_keystrokes,
           COUNT(*) as sessions_count
-        FROM sessions
-        WHERE start_time >= ?
-        GROUP BY date
-        ORDER BY date
+        FROM (
+          SELECT
+            duration_seconds,
+            date(start_time / 1000, 'unixepoch', 'localtime') as day
+          FROM sessions
+          WHERE start_time >= ?
+        )
+        GROUP BY day
+        ORDER BY day
       `).all(sinceMs) as { date: string; total_seconds: number; total_keystrokes: number; sessions_count: number }[]
+    },
+
+    getSiteUsageStats(sinceMs?: number): { domain: string; total_ms: number; sample_title: string }[] {
+      const since = sinceMs || 0
+      const rows = database.prepare(`
+        SELECT window_title, start_time, end_time
+        FROM activities
+        WHERE start_time >= ?
+          AND window_title IS NOT NULL
+          AND window_title != ''
+        ORDER BY start_time DESC
+      `).all(since) as { window_title: string; start_time: number; end_time: number }[]
+
+      const domainMap = new Map<string, { totalMs: number; sampleTitle: string }>()
+      for (const row of rows) {
+        const domain = extractDomain(row.window_title)
+        if (!domain) continue
+        const durationMs = Math.max(0, row.end_time - row.start_time)
+        const existing = domainMap.get(domain)
+        if (!existing) {
+          domainMap.set(domain, { totalMs: durationMs, sampleTitle: row.window_title })
+          continue
+        }
+        existing.totalMs += durationMs
+      }
+
+      return Array.from(domainMap.entries())
+        .map(([domain, data]) => ({
+          domain,
+          total_ms: data.totalMs,
+          sample_title: data.sampleTitle,
+        }))
+        .sort((a, b) => b.total_ms - a.total_ms)
+        .slice(0, 100)
+    },
+
+    getFocusBlocks(sinceMs?: number, minMinutes = 20): { start_time: number; end_time: number; total_seconds: number; dominant_app: string; categories: string[] }[] {
+      const since = sinceMs || 0
+      const minSeconds = Math.max(5, minMinutes) * 60
+      const rows = database.prepare(`
+        SELECT app_name, category, start_time, end_time
+        FROM activities
+        WHERE start_time >= ?
+        ORDER BY start_time ASC
+      `).all(since) as { app_name: string | null; category: string | null; start_time: number; end_time: number }[]
+
+      const blocks: { start_time: number; end_time: number; total_seconds: number; dominant_app: string; categories: string[] }[] = []
+      let current: {
+        startTime: number
+        endTime: number
+        totalSeconds: number
+        appDurations: Map<string, number>
+        categories: Set<string>
+      } | null = null
+
+      for (const row of rows) {
+        const category = row.category || 'other'
+        const durationSeconds = Math.max(0, row.end_time - row.start_time) / 1000
+        if (!isFocusCategory(category)) {
+          if (current && current.totalSeconds >= minSeconds) {
+            const dominantApp = Array.from(current.appDurations.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Unknown'
+            blocks.push({
+              start_time: current.startTime,
+              end_time: current.endTime,
+              total_seconds: Math.round(current.totalSeconds),
+              dominant_app: dominantApp,
+              categories: Array.from(current.categories),
+            })
+          }
+          current = null
+          continue
+        }
+
+        if (!current || row.start_time - current.endTime > 120000) {
+          if (current && current.totalSeconds >= minSeconds) {
+            const dominantApp = Array.from(current.appDurations.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Unknown'
+            blocks.push({
+              start_time: current.startTime,
+              end_time: current.endTime,
+              total_seconds: Math.round(current.totalSeconds),
+              dominant_app: dominantApp,
+              categories: Array.from(current.categories),
+            })
+          }
+          current = {
+            startTime: row.start_time,
+            endTime: row.end_time,
+            totalSeconds: durationSeconds,
+            appDurations: new Map<string, number>(),
+            categories: new Set<string>(),
+          }
+        } else {
+          current.endTime = row.end_time
+          current.totalSeconds += durationSeconds
+        }
+
+        const appName = row.app_name || 'Unknown'
+        current.appDurations.set(appName, (current.appDurations.get(appName) || 0) + durationSeconds)
+        current.categories.add(category)
+      }
+
+      if (current && current.totalSeconds >= minSeconds) {
+        const dominantApp = Array.from(current.appDurations.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Unknown'
+        blocks.push({
+          start_time: current.startTime,
+          end_time: current.endTime,
+          total_seconds: Math.round(current.totalSeconds),
+          dominant_app: dominantApp,
+          categories: Array.from(current.categories),
+        })
+      }
+
+      return blocks.sort((a, b) => b.total_seconds - a.total_seconds).slice(0, 20)
+    },
+
+    getDistractionMetrics(sinceMs?: number): {
+      distraction_seconds: number
+      focus_seconds: number
+      distraction_switches: number
+      longest_focus_minutes: number
+      top_distractions: { app_name: string; total_seconds: number }[]
+    } {
+      const since = sinceMs || 0
+      const rows = database.prepare(`
+        SELECT app_name, category, start_time, end_time
+        FROM activities
+        WHERE start_time >= ?
+        ORDER BY start_time ASC
+      `).all(since) as { app_name: string | null; category: string | null; start_time: number; end_time: number }[]
+
+      let distractionSeconds = 0
+      let focusSeconds = 0
+      let distractionSwitches = 0
+      let maxFocusStreak = 0
+      let currentFocusStreak = 0
+      const appDistractionTotals = new Map<string, number>()
+      let prevWasFocus = false
+
+      for (const row of rows) {
+        const category = row.category || 'other'
+        const seconds = Math.max(0, row.end_time - row.start_time) / 1000
+        const appName = row.app_name || 'Unknown'
+        const isFocus = isFocusCategory(category)
+        const isDistraction = isDistractionCategory(category)
+
+        if (isFocus) {
+          focusSeconds += seconds
+          currentFocusStreak += seconds
+          if (currentFocusStreak > maxFocusStreak) maxFocusStreak = currentFocusStreak
+          prevWasFocus = true
+          continue
+        }
+
+        if (isDistraction) {
+          distractionSeconds += seconds
+          appDistractionTotals.set(appName, (appDistractionTotals.get(appName) || 0) + seconds)
+          if (prevWasFocus) distractionSwitches++
+        }
+
+        currentFocusStreak = 0
+        prevWasFocus = false
+      }
+
+      const topDistractions = Array.from(appDistractionTotals.entries())
+        .map(([app_name, total_seconds]) => ({ app_name, total_seconds: Math.round(total_seconds) }))
+        .sort((a, b) => b.total_seconds - a.total_seconds)
+        .slice(0, 6)
+
+      return {
+        distraction_seconds: Math.round(distractionSeconds),
+        focus_seconds: Math.round(focusSeconds),
+        distraction_switches: distractionSwitches,
+        longest_focus_minutes: Math.round(maxFocusStreak / 60),
+        top_distractions: topDistractions,
+      }
+    },
+
+    getCategoryTrends(days = 14): { date: string; category: string; total_seconds: number }[] {
+      const since = new Date()
+      since.setDate(since.getDate() - Math.max(1, days))
+      since.setHours(0, 0, 0, 0)
+      const sinceMs = since.getTime()
+      return database.prepare(`
+        SELECT
+          date(start_time / 1000, 'unixepoch', 'localtime') as date,
+          category,
+          CAST(COALESCE(SUM(end_time - start_time), 0) / 1000 AS INTEGER) as total_seconds
+        FROM activities
+        WHERE start_time >= ?
+        GROUP BY date, category
+        ORDER BY date ASC
+      `).all(sinceMs) as { date: string; category: string; total_seconds: number }[]
+    },
+
+    getPeriodComparison(currentSinceMs: number, currentUntilMs: number, previousSinceMs: number, previousUntilMs: number): {
+      current: PeriodTotals
+      previous: PeriodTotals
+    } {
+      return {
+        current: getPeriodTotals(currentSinceMs, currentUntilMs),
+        previous: getPeriodTotals(previousSinceMs, previousUntilMs),
+      }
     },
 
     // ── Skill XP Log ──
@@ -325,14 +574,40 @@ export function getDatabaseApi() {
     },
 
     // ── Session Checkpoint (crash recovery) ──
-    saveCheckpoint(data: { sessionId: string; startTime: number; elapsedSeconds: number; pausedAccumulated: number }): void {
+    saveCheckpoint(data: {
+      sessionId: string
+      startTime: number
+      elapsedSeconds: number
+      pausedAccumulated: number
+      sessionSkillXP?: Record<string, number>
+    }): void {
       database.prepare(
-        'INSERT OR REPLACE INTO session_checkpoint (id, session_id, start_time, elapsed_seconds, paused_accumulated, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
-      ).run('current', data.sessionId, data.startTime, data.elapsedSeconds, data.pausedAccumulated, Date.now())
+        'INSERT OR REPLACE INTO session_checkpoint (id, session_id, start_time, elapsed_seconds, paused_accumulated, updated_at, session_skill_xp) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      ).run(
+        'current',
+        data.sessionId,
+        data.startTime,
+        data.elapsedSeconds,
+        data.pausedAccumulated,
+        Date.now(),
+        data.sessionSkillXP ? JSON.stringify(data.sessionSkillXP) : null,
+      )
     },
-    getCheckpoint(): { session_id: string; start_time: number; elapsed_seconds: number; paused_accumulated: number; updated_at: number } | null {
+    getCheckpoint(): {
+      session_id: string
+      start_time: number
+      elapsed_seconds: number
+      paused_accumulated: number
+      updated_at: number
+      session_skill_xp: string | null
+    } | null {
       const row = database.prepare('SELECT * FROM session_checkpoint WHERE id = ?').get('current') as {
-        session_id: string; start_time: number; elapsed_seconds: number; paused_accumulated: number; updated_at: number
+        session_id: string
+        start_time: number
+        elapsed_seconds: number
+        paused_accumulated: number
+        updated_at: number
+        session_skill_xp: string | null
       } | undefined
       return row ?? null
     },

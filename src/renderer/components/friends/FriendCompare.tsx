@@ -3,8 +3,8 @@ import { motion } from 'framer-motion'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
 import { skillLevelFromXP } from '../../lib/skills'
-import { FRAMES } from '../../lib/cosmetics'
 import type { FriendProfile } from '../../hooks/useFriends'
+import { AvatarWithFrame } from '../shared/AvatarWithFrame'
 
 interface CompareProps {
   friend: FriendProfile
@@ -149,9 +149,6 @@ export function FriendCompare({ friend, onBack }: CompareProps) {
   const myScore = comparisons.filter(c => c.my > c.their).length
   const theirScore = comparisons.filter(c => c.their > c.my).length
 
-  const myFrame = FRAMES.find(f => f.id === me.frameId)
-  const theirFrame = FRAMES.find(f => f.id === them.frameId)
-
   return (
     <motion.div
       initial={{ opacity: 0, x: 10 }}
@@ -168,16 +165,14 @@ export function FriendCompare({ friend, onBack }: CompareProps) {
         <div className="flex items-center justify-between">
           {/* My avatar */}
           <div className="flex flex-col items-center gap-1.5">
-            <div className="relative">
-              {myFrame && (
-                <div className="absolute -inset-1 rounded-xl" style={{ background: myFrame.gradient, opacity: 0.7 }} />
-              )}
-              <div className={`relative w-12 h-12 rounded-lg bg-discord-darker flex items-center justify-center text-2xl ${myFrame ? 'border-2' : 'border border-white/10'}`}
-                style={myFrame ? { borderColor: myFrame.color } : undefined}
-              >
-                {me.avatar}
-              </div>
-            </div>
+            <AvatarWithFrame
+              avatar={me.avatar}
+              frameId={me.frameId}
+              sizeClass="w-12 h-12"
+              textClass="text-2xl"
+              roundedClass="rounded-lg"
+              ringInsetClass="-inset-1"
+            />
             <span className="text-xs text-white font-medium truncate max-w-[80px]">{me.username}</span>
           </div>
 
@@ -193,16 +188,14 @@ export function FriendCompare({ friend, onBack }: CompareProps) {
 
           {/* Friend avatar */}
           <div className="flex flex-col items-center gap-1.5">
-            <div className="relative">
-              {theirFrame && (
-                <div className="absolute -inset-1 rounded-xl" style={{ background: theirFrame.gradient, opacity: 0.7 }} />
-              )}
-              <div className={`relative w-12 h-12 rounded-lg bg-discord-darker flex items-center justify-center text-2xl ${theirFrame ? 'border-2' : 'border border-white/10'}`}
-                style={theirFrame ? { borderColor: theirFrame.color } : undefined}
-              >
-                {them.avatar}
-              </div>
-            </div>
+            <AvatarWithFrame
+              avatar={them.avatar}
+              frameId={them.frameId}
+              sizeClass="w-12 h-12"
+              textClass="text-2xl"
+              roundedClass="rounded-lg"
+              ringInsetClass="-inset-1"
+            />
             <span className="text-xs text-white font-medium truncate max-w-[80px]">{them.username}</span>
           </div>
         </div>

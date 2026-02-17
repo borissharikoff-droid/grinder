@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { CHEST_DEFS, estimateChestDropRate } from '../../lib/loot'
+import { useNotificationStore } from '../../stores/notificationStore'
+import { ensureInventoryHydrated, useInventoryStore } from '../../stores/inventoryStore'
 
 /* ── Types ── */
 
@@ -131,6 +134,19 @@ export function GoalWidget() {
     if (!api?.db?.completeGoal) return
     try {
       await api.db.completeGoal(reachedGoal.id)
+      ensureInventoryHydrated()
+      const chestType = reachedGoal.period === 'weekly' ? 'rare_chest' : 'common_chest'
+      const estimated = estimateChestDropRate(chestType, { source: 'goal_complete', focusCategory: reachedGoal.target_category })
+      useInventoryStore.getState().addChest(chestType, 'goal_complete', estimated)
+      const chest = CHEST_DEFS[chestType]
+      if (chest) {
+        useNotificationStore.getState().push({
+          type: 'progression',
+          icon: chest.icon,
+          title: `Goal reward: ${chest.name}`,
+          body: `Sent to Inbox • drop rate ~${estimated}%`,
+        })
+      }
       setReachedGoal(null)
       setTimeout(loadGoals, 100)
     } catch (e) { console.error('completeGoal failed', e) }
@@ -361,7 +377,7 @@ function GoalTypePicker({ onPickTime, onPickTask, onCancel }: { onPickTime: () =
         </button>
         <button
           onClick={onPickTask}
-          className="flex-1 flex flex-col items-center gap-1.5 py-3 rounded-lg bg-discord-darker border border-white/5 hover:border-[#8b5cf6]/30 hover:bg-[#8b5cf6]/5 transition-all active:scale-[0.97]"
+          className="flex-1 flex flex-col items-center gap-1.5 py-3 rounded-lg bg-discord-darker border border-white/5 hover:border-discord-purple/30 hover:bg-discord-purple/5 transition-all active:scale-[0.97]"
         >
           <span className="text-lg">✅</span>
           <span className="text-[11px] text-gray-300 font-medium">Task</span>
@@ -482,7 +498,7 @@ function TaskCreator({ onCreated, onCancel }: { onCreated: () => void; onCancel:
         onChange={(e) => setText(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="What needs to get done?"
-        className="w-full text-sm px-3 py-2 rounded-lg bg-discord-darker border border-white/10 text-white placeholder-gray-600 focus:border-[#8b5cf6]/40 outline-none transition-colors"
+        className="w-full text-sm px-3 py-2 rounded-lg bg-discord-darker border border-white/10 text-white placeholder-gray-600 focus:border-discord-purple/40 outline-none transition-colors"
       />
       <div className="flex gap-2">
         <button
@@ -496,7 +512,7 @@ function TaskCreator({ onCreated, onCancel }: { onCreated: () => void; onCancel:
           disabled={!text.trim()}
           className={`flex-1 text-xs py-1.5 rounded-lg border font-semibold transition-all active:scale-95 ${
             text.trim()
-              ? 'bg-[#8b5cf6]/20 text-[#8b5cf6] border-[#8b5cf6]/30 hover:bg-[#8b5cf6]/30'
+              ? 'bg-discord-purple/20 text-discord-purple border-discord-purple/30 hover:bg-discord-purple/30'
               : 'bg-discord-darker text-gray-600 border-white/5 cursor-default'
           }`}
         >

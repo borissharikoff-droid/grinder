@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import { useFriends } from '../../hooks/useFriends'
+import { motion } from 'framer-motion'
 import { useChat } from '../../hooks/useChat'
 import { FriendList } from './FriendList'
 import { FriendListSkeleton } from './FriendListSkeleton'
@@ -12,13 +12,26 @@ import { ChatThread } from './ChatThread'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
 import { useChatTargetStore } from '../../stores/chatTargetStore'
-import type { FriendProfile as FriendProfileType } from '../../hooks/useFriends'
+import type { FriendProfile as FriendProfileType, FriendsModel } from '../../hooks/useFriends'
+import { syncSkillsToSupabase } from '../../services/supabaseSync'
+import { useSkillSyncStore } from '../../stores/skillSyncStore'
+import { PageHeader } from '../shared/PageHeader'
+import { BackButton } from '../shared/BackButton'
+import { ErrorState } from '../shared/ErrorState'
+import { EmptyState } from '../shared/EmptyState'
+import { MOTION } from '../../lib/motion'
+import { FriendEventFeed } from './FriendEventFeed'
+import { FEATURE_FLAGS } from '../../lib/featureFlags'
 
 type FriendView = 'list' | 'profile' | 'compare' | 'chat'
 
-export function FriendsPage() {
+interface FriendsPageProps {
+  friendsModel: FriendsModel
+}
+
+export function FriendsPage({ friendsModel }: FriendsPageProps) {
   const { user } = useAuthStore()
-  const { friends, pendingRequests, unreadByFriendId, loading, error, refresh, acceptRequest, rejectRequest, removeFriend } = useFriends()
+  const { friends, pendingRequests, unreadByFriendId, loading, error, refresh, acceptRequest, rejectRequest, removeFriend } = friendsModel
   const [selected, setSelected] = useState<FriendProfileType | null>(null)
   const [view, setView] = useState<FriendView>('list')
   const [showLeaderboard, setShowLeaderboard] = useState(false)
@@ -26,6 +39,20 @@ export function FriendsPage() {
   const chat = useChat(peerId)
   const chatTargetFriendId = useChatTargetStore((s) => s.friendId)
   const setChatTargetFriendId = useChatTargetStore((s) => s.setFriendId)
+  const { setSyncState } = useSkillSyncStore()
+
+  const retrySkillSync = useCallback(async () => {
+    const api = window.electronAPI
+    if (!api?.db?.getAllSkillXP) return
+    setSyncState({ status: 'syncing', error: null })
+    const result = await syncSkillsToSupabase(api, { maxAttempts: 3 })
+    if (result.ok) {
+      setSyncState({ status: 'success', at: result.lastSkillSyncAt, error: null })
+      refresh()
+      return
+    }
+    setSyncState({ status: 'error', error: result.error ?? 'Skill sync failed' })
+  }, [refresh, setSyncState])
 
   // Navigate to chat when MessageBanner signals (e.g. clicked on new message)
   useEffect(() => {
@@ -45,29 +72,69 @@ export function FriendsPage() {
   }, [chat.markConversationRead, refresh])
 
   const incomingCount = pendingRequests.filter((r) => r.direction === 'incoming').length
+  const isSubview = view === 'chat' || view === 'profile' || view === 'compare'
+  const backToList = useCallback(() => {
+    setView('list')
+    setSelected(null)
+  }, [])
+
+  useEffect(() => {
+    if (!isSubview) return
+    const isEditableTarget = (target: EventTarget | null): boolean => {
+      const el = target as HTMLElement | null
+      if (!el) return false
+      const tag = el.tagName?.toLowerCase()
+      return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable
+    }
+    const isMouseBack = (button: number) => button === 3 || button === 4
+
+    const onKeyDownCapture = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (isEditableTarget(e.target)) return
+      e.preventDefault()
+      e.stopPropagation()
+      backToList()
+    }
+    const onMouseBackCapture = (e: MouseEvent) => {
+      if (!isMouseBack(e.button)) return
+      if (isEditableTarget(e.target)) return
+      e.preventDefault()
+      e.stopPropagation()
+      backToList()
+    }
+
+    window.addEventListener('keydown', onKeyDownCapture, true)
+    window.addEventListener('mousedown', onMouseBackCapture, true)
+    window.addEventListener('auxclick', onMouseBackCapture, true)
+    return () => {
+      window.removeEventListener('keydown', onKeyDownCapture, true)
+      window.removeEventListener('mousedown', onMouseBackCapture, true)
+      window.removeEventListener('auxclick', onMouseBackCapture, true)
+    }
+  }, [isSubview, backToList])
 
   return (
-    <div className="p-4 pb-2">
+    <motion.div
+      initial={{ opacity: MOTION.page.initial.opacity }}
+      animate={{ opacity: MOTION.page.animate.opacity }}
+      exit={{ opacity: MOTION.page.exit.opacity }}
+      transition={{ duration: MOTION.duration.base, ease: MOTION.easing }}
+      className="p-4 pb-2"
+    >
       {!user ? (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <span className="text-3xl mb-3">👥</span>
-          <p className="text-white font-medium mb-1">Sign in to join the squad</p>
-          <p className="text-gray-500 text-xs">Add friends, flex your stats, compete on the leaderboard.</p>
-        </div>
+        <EmptyState title="Sign in to join the squad" description="Add friends, flex your stats, and compete on the leaderboard." icon="👥" />
       ) : !supabase ? (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <span className="text-3xl mb-3">🔌</span>
-          <p className="text-white font-medium mb-1">Supabase not configured</p>
-          <p className="text-gray-500 text-xs max-w-[280px]">
-            Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env in the project root and rebuild (npm run build).
-          </p>
-        </div>
+        <EmptyState
+          title="Supabase not configured"
+          description="Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env in the project root and rebuild."
+          icon="🔌"
+        />
       ) : view === 'compare' && selected ? (
         <FriendCompare friend={selected} onBack={() => setView('profile')} />
       ) : view === 'chat' && selected ? (
         <ChatThread
           profile={selected}
-          onBack={() => { setView('list'); setSelected(null) }}
+          onBack={backToList}
           messages={chat.messages}
           loading={chat.loading}
           sending={chat.sending}
@@ -79,9 +146,10 @@ export function FriendsPage() {
       ) : view === 'profile' && selected ? (
         <FriendProfile
           profile={selected}
-          onBack={() => { setSelected(null); setView('list') }}
+          onBack={backToList}
           onCompare={() => setView('compare')}
           onMessage={() => setView('chat')}
+          onRetrySync={retrySkillSync}
           onRemove={async () => {
             const ok = await removeFriend(selected.friendship_id)
             if (ok) {
@@ -92,9 +160,9 @@ export function FriendsPage() {
         />
       ) : (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-white">Friends</h2>
-            <div className="flex gap-2">
+          <PageHeader
+            title="Friends"
+            rightSlot={(
               <button
                 onClick={() => setShowLeaderboard(!showLeaderboard)}
                 className={`text-xs px-3 py-1 rounded-full border transition-colors ${
@@ -103,10 +171,11 @@ export function FriendsPage() {
               >
                 Leaderboard
               </button>
-            </div>
-          </div>
+            )}
+          />
 
           <AddFriend onAdded={refresh} />
+          {FEATURE_FLAGS.socialFeed && <FriendEventFeed />}
 
           {incomingCount > 0 && !showLeaderboard && (
             <PendingRequests
@@ -118,27 +187,13 @@ export function FriendsPage() {
 
           {showLeaderboard ? (
             <div className="space-y-3">
-              <button
-                onClick={() => setShowLeaderboard(false)}
-                className="flex items-center gap-1.5 text-gray-400 hover:text-white transition-colors text-sm"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-                <span className="font-mono text-xs">Back</span>
-              </button>
+              <BackButton onClick={() => setShowLeaderboard(false)} />
               <Leaderboard />
             </div>
           ) : (
             <>
               {error && (
-                <div className="rounded-xl bg-discord-card/80 border border-red-500/30 p-4 text-center mb-3">
-                  <p className="text-red-400 text-sm mb-2">{error}</p>
-                  <button
-                    onClick={() => refresh()}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-cyber-neon/20 text-cyber-neon border border-cyber-neon/40 hover:bg-cyber-neon/30 transition-colors"
-                  >
-                    Retry
-                  </button>
-                </div>
+                <ErrorState message={error} onRetry={() => refresh()} retryLabel="Reconnect" secondaryAction={{ label: 'Retry sync', onClick: retrySkillSync }} className="mb-3" />
               )}
               {loading ? (
                 <FriendListSkeleton />
@@ -149,6 +204,9 @@ export function FriendsPage() {
                   onMessageFriend={(f) => { setSelected(f); setView('chat') }}
                   unreadByFriendId={unreadByFriendId}
                 />
+              )}
+              {!loading && friends.length === 0 && (
+                <EmptyState title="No friends data yet" description="Reconnect to refresh your friends list." icon="🛰" actionLabel="Reconnect" onAction={() => refresh()} />
               )}
               {!loading && pendingRequests.filter((r) => r.direction === 'outgoing').length > 0 && (
                 <div className="mt-3">
@@ -163,6 +221,6 @@ export function FriendsPage() {
           )}
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }

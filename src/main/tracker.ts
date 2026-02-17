@@ -3,6 +3,8 @@ import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
 import log from './logger'
+import { refineActivityLabels, type LabelRefineInput } from './deepseek'
+import { getDeepSeekApiKey } from './aiConfig'
 
 /** Full path to PowerShell on Windows (works when PATH is not set for child processes). */
 function getPowerShellPath(): string {
@@ -458,6 +460,10 @@ export interface ActivitySnapshot {
   category: ActivityCategory
   /** All active categories (foreground + background, e.g. ['games', 'music']) */
   categories: ActivityCategory[]
+  /** Optional context tag for richer analytics (for now, in-memory only). */
+  contextTag?: string
+  /** Confidence score for category assignment (0..1). */
+  confidence?: number
   timestamp: number
   keystrokes: number
 }
@@ -497,42 +503,235 @@ function emitIdle(idle: boolean) {
 }
 
 const MUSIC_TITLE = /youtube\s*music|music\.youtube|яндекс\s*музык|music\.yandex|music\.yandex\.ru|yandex\s*music|spotify|soundcloud|deezer|apple\s*music|amazon\s*music|vk\s*music|vkmusic| — spotify| - spotify/i
-const LEARNING_TITLE = /подкаст|podcast|лекци|lecture|курс|course|udemy|stepik|edx|coursera|обучение|learning|теория/i
+const LEARNING_TITLE = /подкаст|podcast|лекци|lecture|курс|course|урок|lesson|lessons|tutorial|tutorials|guide|training|udemy|stepik|edx|coursera|khan academy|обучение|learning|теория/i
+const CODING_TITLE = /claude(\s+code)?|claude\.ai|code\.claude\.ai|github|gitlab|bitbucket|stack\s*overflow|leetcode|codeforces|hackerrank|codesandbox|replit|vscode\.dev|codepen|pull request|merge request|api reference|developer docs|typescript docs|mdn web docs/i
+const DESIGN_TITLE = /figma|canva|dribbble|behance|mockup|prototype|wireframe|ui kit|design system/i
+const SOCIAL_TITLE = /twitter|x\.com|reddit|facebook|instagram|linkedin|discord web|messenger/i
+const ENTERTAINMENT_TITLE = /netflix|twitch|prime video|hbo max|disney\+|youtube(?!\s*music)/i
+const BROWSER_HOST_CODING = /github\.dev|vscode\.dev|codesandbox|stackblitz|replit|codespace|codepen|claude\.ai|code\.claude\.ai/i
+const BROWSER_HOST_DESIGN = /figma\.com|canva\.com|dribbble\.com|behance\.net/i
+const BROWSER_HOST_SOCIAL = /x\.com|twitter\.com|reddit\.com|facebook\.com|instagram\.com|linkedin\.com/i
+const BROWSER_HOST_LEARNING = /udemy|coursera|khan academy|edx|stepik|tutorial|documentation|docs|wikipedia|notion|readthedocs|developer\.mozilla|mdn/i
+const DOC_READING_TITLE = /readme|documentation|docs|wiki|manual|guide|api reference|knowledge base|paper|article|research|syllabus|chapter|lesson|lecture|курс|лекц|документац|справка/i
+const TERMINAL_APP = /^(windowsterminal|terminal|powershell|pwsh|cmd|bash|zsh|wsl|wezterm|alacritty|hyper|conhost|mintty|putty|mobaxterm)$/i
+const TERMINAL_WORK_TITLE = /npm|pnpm|yarn|bun|node|python|pip|poetry|cargo|rust|go\s(test|run|build)|javac|gradle|maven|dotnet|tsc|vite|webpack|docker|kubectl|git|ssh|make|cmake|build|test|serve|dev/i
+
+interface AiRefinementCacheEntry {
+  category: ActivityCategory
+  confidence: number
+  reason: string
+  ts: number
+}
+
+const AI_CACHE_TTL_MS = 12 * 60 * 60 * 1000
+const AI_MAX_CACHE_ITEMS = 1200
+const AI_REFINE_BATCH_SIZE = 8
+const AI_REFINE_INTERVAL_MS = 2500
+const AI_REFINE_MAX_QUEUE = 48
+const AI_REFINE_ERROR_COOLDOWN_MS = 60_000
+const aiApiKey = getDeepSeekApiKey()
+const aiRefinementCache = new Map<string, AiRefinementCacheEntry>()
+const aiRefinementQueue = new Map<string, LabelRefineInput>()
+const aiRefinementPending = new Set<string>()
+let aiRefineLoop: NodeJS.Timeout | null = null
+let aiRefineInFlight = false
+let aiRefineCooldownUntil = 0
+
+function makeAiCacheKey(appName: string, windowTitle: string): string {
+  const app = appName.toLowerCase().trim()
+  const title = windowTitle.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 180)
+  return `${app}|${title}`
+}
+
+function normalizeAiCategory(category: string): ActivityCategory | null {
+  const c = category.toLowerCase()
+  const allowed: ActivityCategory[] = ['coding', 'design', 'games', 'social', 'browsing', 'creative', 'learning', 'music', 'other']
+  return (allowed as string[]).includes(c) ? (c as ActivityCategory) : null
+}
+
+function setAiCache(appName: string, windowTitle: string, category: ActivityCategory, confidence: number, reason: string): void {
+  if (aiRefinementCache.size >= AI_MAX_CACHE_ITEMS) {
+    const oldestKey = aiRefinementCache.keys().next().value as string | undefined
+    if (oldestKey) aiRefinementCache.delete(oldestKey)
+  }
+  aiRefinementCache.set(makeAiCacheKey(appName, windowTitle), {
+    category,
+    confidence: Math.max(0, Math.min(1, confidence)),
+    reason: reason.slice(0, 120),
+    ts: Date.now(),
+  })
+}
+
+function getAiCache(appName: string, windowTitle: string): AiRefinementCacheEntry | null {
+  const key = makeAiCacheKey(appName, windowTitle)
+  const cached = aiRefinementCache.get(key)
+  if (!cached) return null
+  if (Date.now() - cached.ts > AI_CACHE_TTL_MS) {
+    aiRefinementCache.delete(key)
+    return null
+  }
+  return cached
+}
+
+function shouldUseAiRefinement(appName: string, windowTitle: string, base: ClassificationResult): boolean {
+  if (!aiApiKey || appName === 'Idle') return false
+  const lowerApp = appName.toLowerCase().replace(/\.(exe|app)$/i, '')
+  const lowerTitle = windowTitle.toLowerCase()
+  if (!lowerTitle || lowerTitle.length < 4) return false
+  if (/\bidly\b/.test(lowerApp) || /\bidly\b/.test(lowerTitle)) return false
+  if (/^(new tab|about:blank|start page|home)$/.test(lowerTitle.trim())) return false
+  const browserLike = /^(chrome|firefox|msedge|brave|opera|vivaldi|arc|yandex|applicationframehost)$/i.test(lowerApp)
+  const terminalLike = TERMINAL_APP.test(lowerApp)
+  const uncertain = base.confidence < 0.88
+  const ambiguousCategory = base.categories[0] === 'browsing' || base.categories[0] === 'other' || base.categories[0] === 'learning'
+  return browserLike || terminalLike || uncertain || ambiguousCategory
+}
+
+function enqueueAiRefinement(appName: string, windowTitle: string, currentCategory: ActivityCategory): void {
+  const key = makeAiCacheKey(appName, windowTitle)
+  if (aiRefinementCache.has(key) || aiRefinementQueue.has(key) || aiRefinementPending.has(key)) return
+  if (aiRefinementQueue.size >= AI_REFINE_MAX_QUEUE) {
+    const oldestKey = aiRefinementQueue.keys().next().value as string | undefined
+    if (oldestKey) aiRefinementQueue.delete(oldestKey)
+  }
+  aiRefinementQueue.set(key, {
+    app_name: appName,
+    window_title: windowTitle,
+    current_category: currentCategory,
+  })
+}
+
+async function processAiRefinementQueue(): Promise<void> {
+  if (!aiApiKey || aiRefineInFlight) return
+  if (Date.now() < aiRefineCooldownUntil) return
+  if (aiRefinementQueue.size === 0) return
+  aiRefineInFlight = true
+  const selected: { key: string; item: LabelRefineInput }[] = []
+  for (const [key, item] of aiRefinementQueue.entries()) {
+    selected.push({ key, item })
+    aiRefinementQueue.delete(key)
+    aiRefinementPending.add(key)
+    if (selected.length >= AI_REFINE_BATCH_SIZE) break
+  }
+  try {
+    const refined = await refineActivityLabels(selected.map((s) => s.item), aiApiKey)
+    for (const row of refined) {
+      const normalized = normalizeAiCategory(row.refined_category)
+      if (!normalized) continue
+      setAiCache(row.app_name, row.window_title, normalized, row.confidence, row.reason)
+    }
+  } catch (err) {
+    aiRefineCooldownUntil = Date.now() + AI_REFINE_ERROR_COOLDOWN_MS
+    log.warn('[tracker] AI refinement failed, temporary cooldown', err)
+  } finally {
+    for (const { key } of selected) aiRefinementPending.delete(key)
+    aiRefineInFlight = false
+  }
+}
+
+function startAiRefinementLoop(): void {
+  if (!aiApiKey || aiRefineLoop) return
+  aiRefineLoop = setInterval(() => {
+    void processAiRefinementQueue()
+  }, AI_REFINE_INTERVAL_MS)
+}
+
+function stopAiRefinementLoop(): void {
+  if (aiRefineLoop) {
+    clearInterval(aiRefineLoop)
+    aiRefineLoop = null
+  }
+  aiRefineInFlight = false
+  aiRefinementQueue.clear()
+  aiRefinementPending.clear()
+}
+
+function refineClassificationWithAi(appName: string, windowTitle: string, base: ClassificationResult): ClassificationResult {
+  const cached = getAiCache(appName, windowTitle)
+  if (cached) {
+    return {
+      categories: [cached.category],
+      contextTag: `ai_${base.contextTag}`,
+      confidence: Math.max(base.confidence, cached.confidence),
+    }
+  }
+  if (shouldUseAiRefinement(appName, windowTitle, base)) {
+    enqueueAiRefinement(appName, windowTitle, base.categories[0] ?? 'other')
+  }
+  return base
+}
+
+export interface ClassificationResult {
+  categories: ActivityCategory[]
+  contextTag: string
+  confidence: number
+}
+
+function classifyBrowserContext(lowerTitle: string): ClassificationResult {
+  const isCoding = CODING_TITLE.test(lowerTitle) || BROWSER_HOST_CODING.test(lowerTitle)
+  const isDesign = DESIGN_TITLE.test(lowerTitle) || BROWSER_HOST_DESIGN.test(lowerTitle)
+  const isLearning = LEARNING_TITLE.test(lowerTitle) || BROWSER_HOST_LEARNING.test(lowerTitle)
+  const isSocial = SOCIAL_TITLE.test(lowerTitle) || BROWSER_HOST_SOCIAL.test(lowerTitle)
+  const isMusic = MUSIC_TITLE.test(lowerTitle)
+  const isEntertainment = ENTERTAINMENT_TITLE.test(lowerTitle)
+  const isPdf = /\.pdf\b/.test(lowerTitle)
+  const isDocReading = isPdf || DOC_READING_TITLE.test(lowerTitle)
+
+  // Priority order keeps signal deterministic and easier to reason about.
+  if (isMusic && isDocReading) return { categories: ['music', 'learning'], contextTag: 'browser_music_learning', confidence: 0.9 }
+  if (isDocReading) return { categories: ['learning'], contextTag: 'browser_docs_learning', confidence: 0.92 }
+  if (isCoding) return { categories: ['coding'], contextTag: 'browser_coding', confidence: 0.95 }
+  if (isDesign) return { categories: ['design'], contextTag: 'browser_design', confidence: 0.93 }
+  if (isMusic && isLearning) return { categories: ['music', 'learning'], contextTag: 'browser_music_learning', confidence: 0.9 }
+  if (isMusic) return { categories: ['music'], contextTag: 'browser_music', confidence: 0.95 }
+  if (isLearning) return { categories: ['learning'], contextTag: 'browser_learning', confidence: 0.9 }
+  if (isSocial) return { categories: ['social'], contextTag: 'browser_social', confidence: 0.9 }
+  if (isEntertainment) return { categories: ['other'], contextTag: 'browser_entertainment', confidence: 0.82 }
+  return { categories: ['browsing'], contextTag: 'browser_research', confidence: 0.7 }
+}
 
 /** Returns one or more categories (e.g. music + learning for podcast on music site). */
 export function categorizeMultiple(appName: string, windowTitle: string): ActivityCategory[] {
+  return categorizeDetailed(appName, windowTitle).categories
+}
+
+export function categorizeDetailed(appName: string, windowTitle: string): ClassificationResult {
   const lowerApp = appName.toLowerCase().replace(/\.(exe|app)$/i, '')
   const lowerTitle = windowTitle.toLowerCase()
   // When process name is unknown (e.g. protected), infer from window title
   if (lowerApp === 'unknown' && lowerTitle) {
-    if (/cursor|visual studio|\.tsx?|\.jsx?|\.py\b|\.rs\b|\.go\b|code\s*\-/i.test(lowerTitle)) return ['coding']
-    if (/chrome|firefox|edge|brave|opera|browser/i.test(lowerTitle)) return ['browsing']
-    if (MUSIC_TITLE.test(lowerTitle)) return ['music']
-    if (LEARNING_TITLE.test(lowerTitle)) return ['learning']
-    if (/figma|design|mockup/i.test(lowerTitle)) return ['design']
-    if (/telegram|discord|slack|whatsapp|teams/i.test(lowerTitle)) return ['social']
-    if (/steam|game|play/i.test(lowerTitle)) return ['games']
+    if (/cursor|visual studio|\.tsx?|\.jsx?|\.py\b|\.rs\b|\.go\b|code\s*\-/i.test(lowerTitle) || CODING_TITLE.test(lowerTitle)) return { categories: ['coding'], contextTag: 'unknown_title_coding', confidence: 0.85 }
+    if (/chrome|firefox|edge|brave|opera|browser/i.test(lowerTitle)) return { categories: ['browsing'], contextTag: 'unknown_browser', confidence: 0.6 }
+    if (MUSIC_TITLE.test(lowerTitle)) return { categories: ['music'], contextTag: 'unknown_title_music', confidence: 0.75 }
+    if (LEARNING_TITLE.test(lowerTitle)) return { categories: ['learning'], contextTag: 'unknown_title_learning', confidence: 0.75 }
+    if (/figma|design|mockup/i.test(lowerTitle)) return { categories: ['design'], contextTag: 'unknown_title_design', confidence: 0.8 }
+    if (/telegram|discord|slack|whatsapp|teams/i.test(lowerTitle)) return { categories: ['social'], contextTag: 'unknown_title_social', confidence: 0.8 }
+    if (/steam|game|play/i.test(lowerTitle)) return { categories: ['games'], contextTag: 'unknown_title_games', confidence: 0.8 }
   }
-  if (/^(code|cursor|intellij|webstorm|pycharm|idea|devenv|rider)$/i.test(lowerApp) || /visual studio/i.test(lowerApp)) return ['coding']
-  if (/\.(tsx?|jsx?|py|rs|go|cpp|cs|java)\b/i.test(lowerTitle)) return ['coding']
-  if (/^(figma|photoshop|sketch|canva|illustrator|xd|invision|zeplin|affinity|gimp|krita)$/i.test(lowerApp) || /figma|design|mockup/i.test(lowerTitle)) return ['design']
-  if (/^(ableton|fl studio|reaper|logic|audacity|premiere|davinci|resolve|obs|blender|afterfx|vegas|cinema4d)$/i.test(lowerApp) || /premiere|davinci|blender|after effects/i.test(lowerTitle)) return ['creative']
-  if (/^(notion|obsidian|anki|sumatrapdf|acrobat|acrord32|foxit|foxitreader|kindle|evernote|onenote)$/i.test(lowerApp) || /\.pdf\b|notion|obsidian|anki/i.test(lowerTitle)) return ['learning']
-  if (/^(spotify|music|soundcloud|itunes|tidal|yandexmusic|deezer|wmplayer|vkmusic)$/i.test(lowerApp) || MUSIC_TITLE.test(lowerTitle)) return ['music']
-  if (/^(steam|epicgameslauncher|valorant|leagueclient|dota2|dota\s*2|minecraft|fortniteclient|gta|csgo|cs2|overwatch|battle\.net|javaw)$/i.test(lowerApp.replace(/\s+/g, '')) || /dota\s*2|game|play|steam/i.test(lowerTitle)) return ['games']
-  if (/^(telegram|discord|slack|whatsapp|teams)$/i.test(lowerApp)) return ['social']
+  if (TERMINAL_APP.test(lowerApp) || /terminal|powershell|command prompt/i.test(lowerTitle)) {
+    if (DOC_READING_TITLE.test(lowerTitle) || /\.pdf\b|\.docx?\b|\.pptx?\b/i.test(lowerTitle)) {
+      return { categories: ['learning'], contextTag: 'terminal_docs_learning', confidence: 0.88 }
+    }
+    if (TERMINAL_WORK_TITLE.test(lowerTitle) || !lowerTitle) {
+      return { categories: ['coding'], contextTag: 'terminal_work', confidence: 0.94 }
+    }
+    return { categories: ['coding'], contextTag: 'terminal_generic', confidence: 0.9 }
+  }
+  if (/^(code|cursor|intellij|webstorm|pycharm|idea|devenv|rider)$/i.test(lowerApp) || /visual studio/i.test(lowerApp)) return { categories: ['coding'], contextTag: 'native_ide', confidence: 0.98 }
+  if (/\.(tsx?|jsx?|py|rs|go|cpp|cs|java)\b/i.test(lowerTitle)) return { categories: ['coding'], contextTag: 'source_file', confidence: 0.92 }
   if (/^(chrome|firefox|msedge|brave|opera|vivaldi|arc|yandex)$/i.test(lowerApp)) {
-    const isMusic = MUSIC_TITLE.test(lowerTitle)
-    const isLearning = LEARNING_TITLE.test(lowerTitle)
-    if (isMusic && isLearning) return ['music', 'learning']
-    if (isMusic) return ['music']
-    if (isLearning) return ['learning']
-    return ['browsing']
+    return classifyBrowserContext(lowerTitle)
   }
+  if (/^(figma|photoshop|sketch|canva|illustrator|xd|invision|zeplin|affinity|gimp|krita)$/i.test(lowerApp) || /figma|design|mockup/i.test(lowerTitle)) return { categories: ['design'], contextTag: 'native_design', confidence: 0.95 }
+  if (/^(ableton|fl studio|reaper|logic|audacity|premiere|davinci|resolve|obs|blender|afterfx|vegas|cinema4d)$/i.test(lowerApp) || /premiere|davinci|blender|after effects/i.test(lowerTitle)) return { categories: ['creative'], contextTag: 'creative_suite', confidence: 0.95 }
+  if (/^(notion|obsidian|anki|sumatrapdf|acrobat|acrord32|foxit|foxitreader|kindle|evernote|onenote)$/i.test(lowerApp) || /\.pdf\b|notion|obsidian|anki/i.test(lowerTitle)) return { categories: ['learning'], contextTag: 'learning_tools', confidence: 0.92 }
+  if (/^(spotify|music|soundcloud|itunes|tidal|yandexmusic|deezer|wmplayer|vkmusic)$/i.test(lowerApp) || MUSIC_TITLE.test(lowerTitle)) return { categories: ['music'], contextTag: 'music_tools', confidence: 0.96 }
+  if (/^(steam|epicgameslauncher|valorant|leagueclient|dota2|dota\s*2|minecraft|fortniteclient|gta|csgo|cs2|overwatch|battle\.net|javaw)$/i.test(lowerApp.replace(/\s+/g, '')) || /dota\s*2|game|play|steam/i.test(lowerTitle)) return { categories: ['games'], contextTag: 'games_tools', confidence: 0.96 }
+  if (/^(telegram|discord|slack|whatsapp|teams)$/i.test(lowerApp)) return { categories: ['social'], contextTag: 'messenger', confidence: 0.95 }
   // Windows: Edge/Chrome sometimes as "Application Frame Host" or "Microsoft Edge"
-  if (/applicationframehost|microsoft edge|msedge|browser/i.test(lowerApp.replace(/\s+/g, ''))) return ['browsing']
-  if (/^(chrome|firefox|edge)$/i.test(lowerApp.replace(/\s+/g, ''))) return ['browsing']
-  return ['other']
+  if (/applicationframehost|microsoft edge|msedge|browser/i.test(lowerApp.replace(/\s+/g, ''))) return { categories: ['browsing'], contextTag: 'browser_host_fallback', confidence: 0.55 }
+  if (/^(chrome|firefox|edge)$/i.test(lowerApp.replace(/\s+/g, ''))) return { categories: ['browsing'], contextTag: 'browser_name_fallback', confidence: 0.55 }
+  return { categories: ['other'], contextTag: 'unknown', confidence: 0.5 }
 }
 
 function getAppDisplayName(appName: string): string {
@@ -619,10 +818,15 @@ function poll(): void {
     }
 
     // Idle (desktop with no title) does not give XP; Unknown windows use title-based categorization
-    const fgCategories =
+    const heuristicsClassification =
       rawName === 'Idle'
-        ? (['idle'] as ActivityCategory[])
-        : categorizeMultiple(rawName, windowTitle)
+        ? ({ categories: ['idle'] as ActivityCategory[], contextTag: 'idle', confidence: 1 } as ClassificationResult)
+        : categorizeDetailed(rawName, windowTitle)
+    const fgClassification =
+      rawName === 'Idle'
+        ? heuristicsClassification
+        : refineClassificationWithAi(rawName, windowTitle, heuristicsClassification)
+    const fgCategories = fgClassification.categories
     // Merge background categories (e.g. music playing in Spotify while gaming)
     const bgCats = (latestWinInfo.bgCategories || []) as ActivityCategory[]
     const mergedSet = new Set<ActivityCategory>(fgCategories)
@@ -632,7 +836,16 @@ function poll(): void {
     const categories = Array.from(mergedSet)
     const primaryCategory = fgCategories[0] ?? 'other'
     const displayName = getAppDisplayName(rawName)
-    lastActivity = { appName: displayName, windowTitle, category: primaryCategory, categories, timestamp: now, keystrokes: totalSessionKeystrokes }
+    lastActivity = {
+      appName: displayName,
+      windowTitle,
+      category: primaryCategory,
+      categories,
+      contextTag: fgClassification.contextTag,
+      confidence: fgClassification.confidence,
+      timestamp: now,
+      keystrokes: totalSessionKeystrokes,
+    }
     listeners.forEach((cb) => cb(lastActivity!))
 
     const key = `${lastActivity.appName}|${[...categories].sort().join(',')}`
@@ -667,6 +880,7 @@ export function getTrackerApi() {
       poll() // run immediately so we show "Detecting..." then update when first WIN line arrives
       setTimeout(poll, 800) // and again after detector had time to output (script loop is 1.5s)
       if (process.platform !== 'win32') return
+      startAiRefinementLoop()
       probePowerShell().then((ok) => {
         if (ok) {
           startWindowDetector()
@@ -685,6 +899,7 @@ export function getTrackerApi() {
       pushCurrentSegment(Date.now())
       currentSegmentActivity = null
       stopWindowDetector()
+      stopAiRefinementLoop()
       const result = [...segments]
       segments = []
       return result

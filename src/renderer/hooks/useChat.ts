@@ -1,9 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../stores/authStore'
 import { useNavBadgeStore } from '../stores/navBadgeStore'
-import { useFriendToastStore } from '../stores/friendToastStore'
-import { playMessageSound } from '../lib/sounds'
 
 export interface ChatMessage {
   id: string
@@ -14,8 +12,6 @@ export interface ChatMessage {
   read_at: string | null
 }
 
-let _channelSeq = 0
-
 /** @param peerId When set, new messages from this peer are appended to the thread and do not increase unread count. */
 export function useChat(peerId: string | null = null) {
   const { user } = useAuthStore()
@@ -23,10 +19,7 @@ export function useChat(peerId: string | null = null) {
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
-  const { setUnreadMessagesCount, addUnreadMessages } = useNavBadgeStore()
-  const peerIdRef = useRef(peerId)
-  peerIdRef.current = peerId
-
+  const { setUnreadMessagesCount } = useNavBadgeStore()
   const fetchUnreadCount = useCallback(async () => {
     if (!supabase || !user?.id) return
     const { count, error } = await supabase
@@ -44,49 +37,6 @@ export function useChat(peerId: string | null = null) {
     }
     fetchUnreadCount()
   }, [user?.id, fetchUnreadCount, setUnreadMessagesCount])
-
-  // Real-time subscription for incoming messages — stable channel, uses ref for peerId
-  useEffect(() => {
-    if (!supabase || !user?.id) return
-    const channelName = `dm-incoming-${++_channelSeq}`
-    const channel = supabase
-      .channel(channelName)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `receiver_id=eq.${user.id}`,
-        },
-        (payload) => {
-          const row = payload.new as ChatMessage
-          const currentPeer = peerIdRef.current
-          const isFromOpenThread = currentPeer !== null && row.sender_id === currentPeer
-          if (isFromOpenThread) {
-            setMessages((prev) => {
-              if (prev.some((m) => m.id === row.id)) return prev
-              return [...prev, row].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-            })
-          } else {
-            addUnreadMessages(1)
-            playMessageSound()
-            // Show toast with sender name
-            if (supabase) {
-              supabase.from('profiles').select('username').eq('id', row.sender_id).single().then(({ data: profile }) => {
-                const name = profile?.username?.trim() || 'Friend'
-                const preview = row.body.length > 30 ? row.body.slice(0, 30) + '...' : row.body
-                useFriendToastStore.getState().push({ type: 'message', friendName: name, messagePreview: preview })
-              })
-            }
-          }
-        }
-      )
-      .subscribe()
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [user?.id, addUnreadMessages])
 
   // Polling fallback: when chat is open, poll every 5s for new messages
   useEffect(() => {

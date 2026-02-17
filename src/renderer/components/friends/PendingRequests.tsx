@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import type { PendingRequest } from '../../hooks/useFriends'
+import { AvatarWithFrame } from '../shared/AvatarWithFrame'
 
 interface PendingRequestsProps {
   requests: PendingRequest[]
@@ -29,9 +30,14 @@ export function PendingRequests({ requests, onAccept, onReject }: PendingRequest
                 exit={{ opacity: 0, x: 10, height: 0 }}
                 className="flex items-center gap-3 py-2"
               >
-                <div className="h-9 w-9 rounded-full bg-discord-accent/30 flex items-center justify-center text-white text-sm font-semibold shrink-0">
-                  {req.profile.avatar_url || (req.profile.username || '??').toUpperCase().slice(0, 2)}
-                </div>
+                <AvatarWithFrame
+                  avatar={req.profile.avatar_url || (req.profile.username || '??').toUpperCase().slice(0, 2)}
+                  frameId={req.profile.equipped_frame}
+                  sizeClass="w-9 h-9"
+                  textClass="text-sm font-semibold text-white"
+                  roundedClass="rounded-full"
+                  ringInsetClass="-inset-1"
+                />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-white truncate">
                     {req.profile.username || 'Anonymous'}
@@ -67,9 +73,14 @@ export function PendingRequests({ requests, onAccept, onReject }: PendingRequest
           </p>
           {outgoing.map((req) => (
             <div key={req.friendship_id} className="flex items-center gap-3 py-2">
-              <div className="h-9 w-9 rounded-full bg-discord-accent/30 flex items-center justify-center text-white text-sm font-semibold shrink-0">
-                {req.profile.avatar_url || (req.profile.username || '??').toUpperCase().slice(0, 2)}
-              </div>
+              <AvatarWithFrame
+                avatar={req.profile.avatar_url || (req.profile.username || '??').toUpperCase().slice(0, 2)}
+                frameId={req.profile.equipped_frame}
+                sizeClass="w-9 h-9"
+                textClass="text-sm font-semibold text-white"
+                roundedClass="rounded-full"
+                ringInsetClass="-inset-1"
+              />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-white truncate">
                   {req.profile.username || 'Anonymous'}

@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AIAnalysis } from './AIAnalysis'
+import { MOTION } from '../../lib/motion'
+import { CATEGORY_COLORS, CATEGORY_EMOJI, CATEGORY_LABELS } from '../../lib/uiConstants'
+import { BackButton } from '../shared/BackButton'
+import { PageLoading } from '../shared/PageLoading'
+import { EmptyState } from '../shared/EmptyState'
+import { ErrorState } from '../shared/ErrorState'
 
 interface SessionDetailProps {
   sessionId: string
@@ -24,42 +30,6 @@ interface SessionRow {
   end_time: number
   duration_seconds: number
   summary: string | null
-}
-
-const CATEGORY_COLORS: Record<string, string> = {
-  coding: '#00ff88',
-  design: '#ff6b9d',
-  creative: '#e879f9',
-  learning: '#facc15',
-  music: '#5865F2',
-  games: '#ed4245',
-  social: '#faa61a',
-  browsing: '#57F287',
-  other: '#99aab5',
-}
-
-const CATEGORY_EMOJI: Record<string, string> = {
-  coding: '💻',
-  design: '🎨',
-  creative: '🎬',
-  learning: '📚',
-  music: '🎵',
-  games: '🎮',
-  social: '💬',
-  browsing: '🌐',
-  other: '📱',
-}
-
-const CATEGORY_LABELS: Record<string, string> = {
-  coding: 'Code Editor',
-  design: 'Design',
-  creative: 'Creative',
-  learning: 'Learning',
-  music: 'Music',
-  games: 'Games',
-  social: 'Social',
-  browsing: 'Browsing',
-  other: 'Other',
 }
 
 /** Exclude the Idly app itself from stats. */
@@ -112,20 +82,33 @@ interface CategoryGroup {
   apps: AppEntry[]
 }
 
+function isFocusCategory(cat: string): boolean {
+  return ['coding', 'design', 'creative', 'learning'].includes(cat)
+}
+
+function isDistractionCategory(cat: string): boolean {
+  return ['social', 'games', 'other'].includes(cat)
+}
+
 export function SessionDetail({ sessionId, onBack }: SessionDetailProps) {
   const [session, setSession] = useState<SessionRow | null>(null)
   const [activities, setActivities] = useState<ActivityRow[]>([])
   const [notFound, setNotFound] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [expandedCat, setExpandedCat] = useState<string | null>(null)
 
   useEffect(() => {
     const api = window.electronAPI
     if (api?.db) {
-      api.db.getSessionById(sessionId).then((s) => {
-        if (s) setSession(s as SessionRow)
-        else setNotFound(true)
-      })
-      api.db.getActivitiesBySessionId(sessionId).then((list) => setActivities((list as ActivityRow[]) || []))
+      Promise.all([api.db.getSessionById(sessionId), api.db.getActivitiesBySessionId(sessionId)])
+        .then(([s, list]) => {
+          if (s) setSession(s as SessionRow)
+          else setNotFound(true)
+          setActivities((list as ActivityRow[]) || [])
+        })
+        .catch(() => {
+          setLoadError('Failed to load session details.')
+        })
     } else {
       try {
         const sessions: SessionRow[] = JSON.parse(localStorage.getItem('idly_sessions') || '[]')
@@ -135,7 +118,7 @@ export function SessionDetail({ sessionId, onBack }: SessionDetailProps) {
         const allActivities = JSON.parse(localStorage.getItem('idly_activities') || '{}')
         setActivities(allActivities[sessionId] || [])
       } catch {
-        setNotFound(true)
+        setLoadError('Failed to load session details.')
       }
     }
   }, [sessionId])
@@ -213,33 +196,67 @@ export function SessionDetail({ sessionId, onBack }: SessionDetailProps) {
     category: a.category || 'other',
     start: a.start_time,
     end: a.end_time,
+    app: a.app_name || 'Unknown',
     color: CATEGORY_COLORS[a.category || 'other'] || CATEGORY_COLORS.other,
   }))
+
+  const interruptionPoints = timelineSegments
+    .map((seg, idx) => {
+      if (idx === 0) return null
+      const prev = timelineSegments[idx - 1]
+      if (isFocusCategory(prev.category) && isDistractionCategory(seg.category)) {
+        return {
+          idx,
+          app: seg.app,
+          category: seg.category,
+          start: seg.start,
+        }
+      }
+      return null
+    })
+    .filter(Boolean) as { idx: number; app: string; category: string; start: number }[]
+
+  const keysPerMin = session?.duration_seconds ? Math.round(totalKeystrokes / (session.duration_seconds / 60)) : 0
+
+  const storyIntro = (() => {
+    if (!session) return ''
+    if (timelineSegments.length === 0) return 'No tracked activity in this session.'
+    const topCategory = categoryGroups[0]
+    const topApp = topCategory?.apps[0]
+    const pacing = contextSwitches > 25 ? 'highly fragmented' : contextSwitches > 10 ? 'mixed-focus' : 'deep-focus'
+    return `This session was mostly ${topCategory?.label || 'mixed work'}, led by ${topApp?.name || 'multiple apps'}. Pattern: ${pacing}, ${contextSwitches} switches, ${keysPerMin} keys/min.`
+  })()
 
   if (notFound) {
     return (
       <div className="space-y-4">
-        <button onClick={onBack} className="text-gray-400 hover:text-white text-sm font-mono">← Back</button>
-        <p className="text-gray-500 text-sm">Session not found.</p>
+        <BackButton onClick={onBack} />
+        <EmptyState title="Session not found" description="Try opening another session from the list." icon="🧭" />
       </div>
     )
   }
 
-  if (!session) return <div className="text-gray-500 text-sm py-8 text-center font-mono animate-pulse">Loading session...</div>
+  if (loadError) {
+    return (
+      <div className="space-y-4">
+        <BackButton onClick={onBack} />
+        <ErrorState message={loadError} onRetry={() => window.location.reload()} retryLabel="Reload" />
+      </div>
+    )
+  }
+
+  if (!session) return <PageLoading label="Loading session..." className="mt-2" />
 
   const sessionDate = new Date(session.start_time)
   const dateStr = sessionDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   const timeStr = sessionDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
-  const keysPerMin = session.duration_seconds > 0 ? Math.round(totalKeystrokes / (session.duration_seconds / 60)) : 0
   const switchRate = session.duration_seconds > 0 ? (contextSwitches / (session.duration_seconds / 60)).toFixed(1) : '0'
 
   return (
     <div className="space-y-3">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <button onClick={onBack} className="w-7 h-7 rounded-lg bg-discord-card border border-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-colors shrink-0">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
-        </button>
+        <BackButton onClick={onBack} className="shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between">
             <span className="text-xs text-gray-500 font-mono">{dateStr.toUpperCase()}, {timeStr}</span>
@@ -278,6 +295,11 @@ export function SessionDetail({ sessionId, onBack }: SessionDetailProps) {
               )
             })}
           </div>
+          {interruptionPoints.length > 0 && (
+            <p className="text-[10px] text-discord-red mt-2">
+              {interruptionPoints.length} distraction interruptions detected from focus flow.
+            </p>
+          )}
           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
             {categoryGroups.map((cat) => (
               <div key={cat.category} className="flex items-center gap-1">
@@ -289,13 +311,36 @@ export function SessionDetail({ sessionId, onBack }: SessionDetailProps) {
         </div>
       )}
 
+      {/* Session story */}
+      <div className="rounded-xl bg-discord-card/80 border border-white/10 p-3 space-y-2">
+        <p className="text-[10px] uppercase tracking-wider text-gray-500 font-mono">Session Story</p>
+        <p className="text-xs text-gray-300">{storyIntro}</p>
+        <div className="space-y-1.5">
+          {timelineSegments.slice(0, 8).map((seg, idx) => {
+            const segSec = Math.round((seg.end - seg.start) / 1000)
+            const stamp = new Date(seg.start).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+            return (
+              <div key={`${seg.start}-${idx}`} className="flex items-center gap-2 text-[11px]">
+                <div className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: seg.color }} />
+                <span className="text-gray-500 font-mono shrink-0">{stamp}</span>
+                <span className="text-gray-300 truncate flex-1">{seg.app}</span>
+                <span className="text-gray-600 font-mono shrink-0">{formatDuration(segSec)}</span>
+              </div>
+            )
+          })}
+          {timelineSegments.length > 8 && (
+            <p className="text-[10px] text-gray-600">+{timelineSegments.length - 8} more timeline events</p>
+          )}
+        </div>
+      </div>
+
       {/* Category breakdown with nested apps and window titles */}
       {categoryGroups.length > 0 && (
         <div className="space-y-1.5">
           {categoryGroups.map((group, gi) => {
             const isExpanded = expandedCat === group.category
             return (
-              <motion.div key={group.category} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: gi * 0.04 }}
+              <motion.div key={group.category} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: gi * 0.04, duration: MOTION.duration.fast, ease: MOTION.easing }}
                 className="rounded-xl bg-discord-card/80 border border-white/10 overflow-hidden"
               >
                 <button type="button" onClick={() => setExpandedCat(isExpanded ? null : group.category)}
@@ -309,7 +354,7 @@ export function SessionDetail({ sessionId, onBack }: SessionDetailProps) {
                 </button>
                 <AnimatePresence>
                   {isExpanded && (
-                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: MOTION.duration.fast, ease: MOTION.easing }} className="overflow-hidden">
                       <div className="px-3 pb-3 space-y-2 border-t border-white/5 pt-2">
                         {group.apps.map((app) => (
                           <div key={app.name}>

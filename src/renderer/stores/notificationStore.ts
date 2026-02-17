@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type NotificationType = 'friend_online' | 'friend_levelup' | 'message' | 'update' | 'achievement' | 'system'
+export type NotificationType = 'friend_levelup' | 'update' | 'progression'
 
 export interface Notification {
   id: string
@@ -22,11 +22,13 @@ interface NotificationStore {
 }
 
 const MAX = 50
+const ALLOWED_TYPES: NotificationType[] = ['update', 'friend_levelup', 'progression']
 
 export const useNotificationStore = create<NotificationStore>((set) => ({
   items: [],
   unreadCount: 0,
   push(payload) {
+    if (!ALLOWED_TYPES.includes(payload.type)) return
     const n: Notification = { ...payload, id: crypto.randomUUID(), timestamp: Date.now(), read: false }
     set((s) => {
       const items = [n, ...s.items].slice(0, MAX)

@@ -4,7 +4,8 @@ import path from 'path'
 import fs from 'fs'
 import { getTrackerApi } from './tracker'
 import { getDatabaseApi } from './database'
-import { analyzeSession, analyzeOverview } from './deepseek'
+import { analyzeSession, analyzeOverview, refineActivityLabels } from './deepseek'
+import { getDeepSeekApiKey } from './aiConfig'
 import type { OverviewData } from './deepseek'
 import {
   saveSessionSchema,
@@ -162,6 +163,37 @@ export function registerIpcHandlers() {
   ipcMain.handle(IPC_CHANNELS.db.getDailyTotals, (_, days: unknown) => {
     return db.getDailyTotals(positiveInt.parse(days))
   })
+  ipcMain.handle(IPC_CHANNELS.db.getSessionsPage, (_, limit: unknown, offset: unknown, sinceMs: unknown) => {
+    const parsedLimit = optionalLimit.parse(limit) ?? 25
+    const parsedOffset = nonNegativeInt.parse(offset ?? 0)
+    const parsedSince = optionalSinceMs.parse(sinceMs) ?? 0
+    return db.getSessionsPage(parsedLimit, parsedOffset, parsedSince)
+  })
+  ipcMain.handle(IPC_CHANNELS.db.getDistractionMetrics, (_, sinceMs?: unknown) => {
+    return db.getDistractionMetrics(optionalSinceMs.parse(sinceMs))
+  })
+  ipcMain.handle(IPC_CHANNELS.db.getFocusBlocks, (_, sinceMs: unknown, minMinutes: unknown) => {
+    const parsedSince = optionalSinceMs.parse(sinceMs) ?? 0
+    const parsedMin = positiveInt.parse(minMinutes ?? 20)
+    return db.getFocusBlocks(parsedSince, parsedMin)
+  })
+  ipcMain.handle(IPC_CHANNELS.db.getSiteUsageStats, (_, sinceMs?: unknown) => {
+    return db.getSiteUsageStats(optionalSinceMs.parse(sinceMs))
+  })
+  ipcMain.handle(IPC_CHANNELS.db.getCategoryTrends, (_, days: unknown) => {
+    return db.getCategoryTrends(positiveInt.parse(days ?? 14))
+  })
+  ipcMain.handle(
+    IPC_CHANNELS.db.getPeriodComparison,
+    (_, currentSinceMs: unknown, currentUntilMs: unknown, previousSinceMs: unknown, previousUntilMs: unknown) => {
+      return db.getPeriodComparison(
+        nonNegativeInt.parse(currentSinceMs),
+        nonNegativeInt.parse(currentUntilMs),
+        nonNegativeInt.parse(previousSinceMs),
+        nonNegativeInt.parse(previousUntilMs),
+      )
+    },
+  )
 
   // Skill XP Log
   ipcMain.handle(IPC_CHANNELS.db.addSkillXPLog, (_, skillId: unknown, xpDelta: unknown) => {
@@ -173,7 +205,13 @@ export function registerIpcHandlers() {
 
   // Session Checkpoint (crash recovery)
   ipcMain.handle(IPC_CHANNELS.db.saveCheckpoint, (_, data: unknown) => {
-    const parsed = data as { sessionId: string; startTime: number; elapsedSeconds: number; pausedAccumulated: number }
+    const parsed = data as {
+      sessionId: string
+      startTime: number
+      elapsedSeconds: number
+      pausedAccumulated: number
+      sessionSkillXP?: Record<string, number>
+    }
     if (!parsed || typeof parsed.sessionId !== 'string') throw new Error('Invalid checkpoint data')
     return db.saveCheckpoint(parsed)
   })
@@ -186,8 +224,7 @@ export function registerIpcHandlers() {
     if (!session) throw new Error('Session not found')
     const existing = db.getSessionAnalysis(id)
     if (existing) return existing
-    const apiKey = process.env.DEEPSEEK_API_KEY
-    if (!apiKey) throw new Error('DEEPSEEK_API_KEY not set in .env')
+    const apiKey = getDeepSeekApiKey()
     const activities = db.getActivitiesBySessionId(id)
     // Count context switches for this session
     let contextSwitches = 0
@@ -209,9 +246,25 @@ export function registerIpcHandlers() {
     }
     lastOverviewCallMs = now
 
-    const apiKey = process.env.DEEPSEEK_API_KEY
-    if (!apiKey) throw new Error('DEEPSEEK_API_KEY not set in .env')
+    const apiKey = getDeepSeekApiKey()
     return analyzeOverview(overviewData, apiKey)
+  })
+  ipcMain.handle(IPC_CHANNELS.ai.refineActivityLabels, async (_, items: unknown) => {
+    if (!Array.isArray(items)) throw new Error('items must be an array')
+    const sanitized = items
+      .slice(0, 25)
+      .map((item) => {
+        const row = item as { app_name?: unknown; window_title?: unknown; current_category?: unknown }
+        return {
+          app_name: typeof row.app_name === 'string' ? row.app_name : 'Unknown',
+          window_title: typeof row.window_title === 'string' ? row.window_title : '',
+          current_category: typeof row.current_category === 'string' ? row.current_category : 'browsing',
+        }
+      })
+      .filter((row) => row.window_title.length > 0)
+    if (sanitized.length === 0) return []
+    const apiKey = getDeepSeekApiKey()
+    return refineActivityLabels(sanitized, apiKey)
   })
 
   // ── Auto-launch ──

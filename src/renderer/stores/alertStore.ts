@@ -1,5 +1,9 @@
 import { create } from 'zustand'
 import type { AchievementDef } from '../lib/xp'
+import { grantRewardPayloads, mapAchievementToRewardPayloads } from '../services/rewardGrant'
+import { CHEST_DEFS, estimateChestDropRate } from '../lib/loot'
+import { useNotificationStore } from './notificationStore'
+import { ensureInventoryHydrated, useInventoryStore } from './inventoryStore'
 
 export interface AlertItem {
   id: string
@@ -13,7 +17,7 @@ interface AlertStore {
   currentAlert: AlertItem | null
   push: (achievement: AchievementDef) => void
   showNext: () => void
-  claimCurrent: () => void
+  claimCurrent: () => Promise<void>
   dismissCurrent: () => void
 }
 
@@ -46,43 +50,24 @@ export const useAlertStore = create<AlertStore>((set, get) => ({
     }
   },
 
-  claimCurrent() {
+  async claimCurrent() {
     const { currentAlert } = get()
-    if (currentAlert?.achievement.reward) {
-      // Save unlocked reward to localStorage
-      try {
-        const rewards = JSON.parse(localStorage.getItem('idly_rewards') || '[]') as string[]
-        const key = `${currentAlert.achievement.reward.type}:${currentAlert.achievement.reward.value}`
-        if (!rewards.includes(key)) {
-          rewards.push(key)
-          localStorage.setItem('idly_rewards', JSON.stringify(rewards))
-        }
-        // If avatar reward, add to unlocked avatars
-        if (currentAlert.achievement.reward.type === 'avatar') {
-          const avatars = JSON.parse(localStorage.getItem('idly_unlocked_avatars') || '[]') as string[]
-          if (!avatars.includes(currentAlert.achievement.reward.value)) {
-            avatars.push(currentAlert.achievement.reward.value)
-            localStorage.setItem('idly_unlocked_avatars', JSON.stringify(avatars))
-          }
-        }
-        if (currentAlert.achievement.reward.type === 'skill_boost') {
-          const xp = 1800
-          if (window.electronAPI?.db?.addSkillXP) {
-            window.electronAPI.db.addSkillXP(currentAlert.achievement.reward.value, xp)
-          } else {
-            const stored = JSON.parse(localStorage.getItem('idly_skill_xp') || '{}') as Record<string, number>
-            stored[currentAlert.achievement.reward.value] = (stored[currentAlert.achievement.reward.value] ?? 0) + xp
-            localStorage.setItem('idly_skill_xp', JSON.stringify(stored))
-          }
-        }
-        if (currentAlert.achievement.reward.type === 'profile_frame') {
-          const frames = JSON.parse(localStorage.getItem('idly_unlocked_frames') || '[]') as string[]
-          if (!frames.includes(currentAlert.achievement.reward.value)) {
-            frames.push(currentAlert.achievement.reward.value)
-            localStorage.setItem('idly_unlocked_frames', JSON.stringify(frames))
-          }
-        }
-      } catch { /* ignore */ }
+    if (currentAlert?.achievement) {
+      const payloads = mapAchievementToRewardPayloads(currentAlert.achievement)
+      await grantRewardPayloads(payloads, window.electronAPI || null)
+      ensureInventoryHydrated()
+      const chestType = currentAlert.achievement.category === 'skill' ? 'rare_chest' : 'common_chest'
+      const estimated = estimateChestDropRate(chestType, { source: 'achievement_claim' })
+      useInventoryStore.getState().addChest(chestType, 'achievement_claim', estimated)
+      const chest = CHEST_DEFS[chestType]
+      if (chest) {
+        useNotificationStore.getState().push({
+          type: 'progression',
+          icon: chest.icon,
+          title: `Chest earned: ${chest.name}`,
+          body: `Added to Inbox • drop rate ~${estimated}%`,
+        })
+      }
     }
     set((s) => ({
       currentAlert: s.currentAlert ? { ...s.currentAlert, claimed: true } : null,

@@ -2,6 +2,9 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { SKILLS, skillLevelFromXP, skillXPProgress, formatSkillTime, categoryToSkillId } from '../../lib/skills'
 import { useSessionStore } from '../../stores/sessionStore'
+import { MOTION } from '../../lib/motion'
+import { PageLoading } from '../shared/PageLoading'
+import { EmptyState } from '../shared/EmptyState'
 
 interface SkillRow {
   skill_id: string
@@ -93,16 +96,17 @@ export function SkillsPage() {
 
   if (loading) {
     return (
-      <div className="p-4 flex items-center justify-center min-h-[200px]">
-        <span className="text-gray-600 text-sm font-mono animate-pulse">Loading skills...</span>
+      <div className="p-4">
+        <PageLoading label="Loading skills..." />
       </div>
     )
   }
 
   return (
     <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
+      initial={MOTION.page.initial}
+      animate={MOTION.page.animate}
+      exit={MOTION.page.exit}
       className="p-4 pb-20 max-w-lg mx-auto overflow-auto"
     >
       {/* Header */}
@@ -124,11 +128,7 @@ export function SkillsPage() {
 
       {/* Empty state */}
       {!levelingSkillId && totalLevel <= 8 && skillData.length === 0 && (
-        <div className="rounded-xl bg-discord-card/60 border border-white/5 p-5 text-center mb-4">
-          <span className="text-2xl block mb-2">⚔</span>
-          <p className="text-gray-400 text-sm font-medium mb-1">No skill XP yet</p>
-          <p className="text-gray-600 text-xs">Start a grind and work in your apps to level up skills.</p>
-        </div>
+        <EmptyState title="No skill XP yet" description="Start a grind and work in your apps to level up skills." icon="⚔" className="mb-4" />
       )}
 
       {/* Leveling skill — on top when active */}
@@ -147,7 +147,7 @@ export function SkillsPage() {
               key={skill.id}
               initial={hasMountedRef.current ? false : { opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+              transition={{ duration: MOTION.duration.slow, ease: MOTION.easingSoft }}
             >
               <button
                 type="button"
@@ -203,7 +203,7 @@ export function SkillsPage() {
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: 'auto', opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+                    transition={{ duration: MOTION.duration.base, ease: MOTION.easingSoft }}
                     className="overflow-hidden"
                   >
                     <div className="mx-1 px-3 py-2.5 rounded-b-xl bg-discord-card/50 border border-t-0 border-white/[0.04] space-y-2">
@@ -272,7 +272,7 @@ export function SkillsPage() {
               key={skill.id}
               initial={hasMountedRef.current ? false : { opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: hasMountedRef.current ? 0 : Math.min(i * 0.04, 0.2), duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+              transition={{ delay: hasMountedRef.current ? 0 : Math.min(i * MOTION.stagger.tight * 2, 0.2), duration: MOTION.duration.slow, ease: MOTION.easingSoft }}
             >
               <button
                 type="button"
@@ -344,7 +344,7 @@ export function SkillsPage() {
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: 'auto', opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+                    transition={{ duration: MOTION.duration.base, ease: MOTION.easingSoft }}
                     className="overflow-hidden"
                   >
                     <div className="mx-1 px-3 py-2.5 rounded-b-xl bg-discord-card/50 border border-t-0 border-white/[0.04] space-y-2">

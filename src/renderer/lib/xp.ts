@@ -1,3 +1,5 @@
+import { ACHIEVEMENT_XP_REWARDS, CATEGORY_XP_MULTIPLIER_CONFIG, STREAK_MULTIPLIERS } from './rewardConfig'
+
 // ── Progressive Leveling Curve ──
 // Levels 1-10: 50 XP each (500 XP total to reach Lv.11)
 // Levels 11-25: 100 XP each
@@ -87,25 +89,14 @@ export function getRewardsInRange(fromLevel: number, toLevel: number): LevelRewa
 
 /** Returns streak-based XP multiplier */
 export function getStreakMultiplier(streak: number): number {
-  if (streak >= 30) return 2.0
-  if (streak >= 14) return 1.5
-  if (streak >= 7) return 1.25
-  if (streak >= 2) return 1.1
+  if (streak >= 30) return STREAK_MULTIPLIERS.day30
+  if (streak >= 14) return STREAK_MULTIPLIERS.day14
+  if (streak >= 7) return STREAK_MULTIPLIERS.day7
+  if (streak >= 2) return STREAK_MULTIPLIERS.day2
   return 1.0
 }
 
-export const CATEGORY_XP_MULTIPLIER: Record<string, number> = {
-  coding: 2,
-  design: 1.5,
-  creative: 1.2,
-  learning: 1.2,
-  music: 0.5,
-  games: 0.3,
-  social: 0.5,
-  browsing: 0.8,
-  other: 0.5,
-  idle: 0, // only selected app windows give XP
-}
+export const CATEGORY_XP_MULTIPLIER: Record<string, number> = CATEGORY_XP_MULTIPLIER_CONFIG
 
 export function computeSessionXP(
   durationSeconds: number,
@@ -136,11 +127,27 @@ export interface AchievementDef {
   description: string
   icon: string
   xpReward: number
+  /** Where XP reward is applied. Global XP is deprecated; use skill-only progression. */
+  xpDestination?: 'skill'
   reward?: AchievementReward
   category: 'grind' | 'streak' | 'social' | 'special' | 'skill'
 }
 
-export const ACHIEVEMENTS: AchievementDef[] = [
+export interface AchievementProgressContext {
+  totalSessions: number
+  streakCount: number
+  friendCount: number
+  skillLevels: Record<string, number>
+}
+
+export interface AchievementProgress {
+  current: number
+  target: number
+  label: string
+  complete: boolean
+}
+
+const ACHIEVEMENTS_BASE: AchievementDef[] = [
   // Grind achievements
   {
     id: 'first_session',
@@ -175,7 +182,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     description: 'Complete 10 sessions',
     icon: '💎',
     xpReward: 75,
-    reward: { type: 'avatar', value: '💎', label: 'Diamond avatar unlocked' },
+    reward: { type: 'profile_frame', value: 'diamond', label: 'Diamond frame unlocked' },
     category: 'grind',
   },
   {
@@ -184,7 +191,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     description: 'Complete 50 sessions',
     icon: '👑',
     xpReward: 200,
-    reward: { type: 'avatar', value: '👑', label: 'Crown avatar unlocked' },
+    reward: { type: 'profile_frame', value: 'crown', label: 'Crown frame unlocked' },
     category: 'grind',
   },
 
@@ -276,18 +283,66 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   },
 
   // Skill-based achievements
-  { id: 'skill_developer_10', name: 'Coding Intern', description: 'Developer Lv.10', icon: '💻', xpReward: 30, reward: { type: 'skill_boost', value: 'developer', label: '+30 min Developer XP' }, category: 'skill' },
-  { id: 'skill_developer_50', name: 'Full Stack', description: 'Developer Lv.50', icon: '⚡', xpReward: 100, reward: { type: 'profile_frame', value: 'code', label: 'Code frame unlocked' }, category: 'skill' },
-  { id: 'skill_developer_99', name: '10x Engineer', description: 'Developer Lv.99', icon: '👑', xpReward: 500, reward: { type: 'avatar', value: '👑', label: 'Crown avatar' }, category: 'skill' },
-  { id: 'skill_designer_10', name: 'Pixel Pusher', description: 'Designer Lv.10', icon: '🎨', xpReward: 30, reward: { type: 'skill_boost', value: 'designer', label: '+30 min Designer XP' }, category: 'skill' },
-  { id: 'skill_designer_50', name: 'Art Director', description: 'Designer Lv.50', icon: '🖌️', xpReward: 100, reward: { type: 'profile_frame', value: 'art', label: 'Art frame unlocked' }, category: 'skill' },
-  { id: 'skill_gamer_25', name: 'Pro Gamer', description: 'Gamer Lv.25', icon: '🎮', xpReward: 50, reward: { type: 'skill_boost', value: 'gamer', label: '+30 min Gamer XP' }, category: 'skill' },
-  { id: 'polymath', name: 'Polymath', description: '3 skills at Lv.25+', icon: '🌟', xpReward: 80, reward: { type: 'profile_frame', value: 'star', label: 'Star frame unlocked' }, category: 'skill' },
-  { id: 'jack_of_all_trades', name: 'Jack of All Trades', description: 'All skills at Lv.10+', icon: '🔮', xpReward: 200, reward: { type: 'avatar', value: '🔮', label: 'Crystal avatar' }, category: 'skill' },
+  { id: 'skill_developer_10', name: 'Coding Intern', description: 'Developer Lv.10', icon: '💻', xpReward: 30, xpDestination: 'skill', reward: { type: 'skill_boost', value: 'developer', label: '+30 min Developer XP' }, category: 'skill' },
+  { id: 'skill_developer_50', name: 'Full Stack', description: 'Developer Lv.50', icon: '⚡', xpReward: 100, xpDestination: 'skill', reward: { type: 'profile_frame', value: 'code', label: 'Code frame unlocked' }, category: 'skill' },
+  { id: 'skill_developer_99', name: '10x Engineer', description: 'Developer Lv.99', icon: '👑', xpReward: 500, xpDestination: 'skill', reward: { type: 'avatar', value: '🧠', label: 'Architect avatar' }, category: 'skill' },
+  { id: 'skill_designer_10', name: 'Pixel Pusher', description: 'Designer Lv.10', icon: '🎨', xpReward: 30, xpDestination: 'skill', reward: { type: 'skill_boost', value: 'designer', label: '+30 min Designer XP' }, category: 'skill' },
+  { id: 'skill_designer_50', name: 'Art Director', description: 'Designer Lv.50', icon: '🖌️', xpReward: 100, xpDestination: 'skill', reward: { type: 'profile_frame', value: 'art', label: 'Art frame unlocked' }, category: 'skill' },
+  { id: 'skill_gamer_25', name: 'Pro Gamer', description: 'Gamer Lv.25', icon: '🎮', xpReward: 50, xpDestination: 'skill', reward: { type: 'skill_boost', value: 'gamer', label: '+30 min Gamer XP' }, category: 'skill' },
+  { id: 'polymath', name: 'Polymath', description: '3 skills at Lv.25+', icon: '🌟', xpReward: 80, xpDestination: 'skill', reward: { type: 'profile_frame', value: 'star', label: 'Star frame unlocked' }, category: 'skill' },
+  { id: 'jack_of_all_trades', name: 'Jack of All Trades', description: 'All skills at Lv.10+', icon: '🔮', xpReward: 200, xpDestination: 'skill', reward: { type: 'avatar', value: '🔮', label: 'Crystal avatar' }, category: 'skill' },
 ]
+
+export const ACHIEVEMENTS: AchievementDef[] = ACHIEVEMENTS_BASE.map((achievement) => ({
+  ...achievement,
+  xpReward: ACHIEVEMENT_XP_REWARDS[achievement.id] ?? achievement.xpReward,
+}))
 
 export function getAchievementById(id: string): AchievementDef | undefined {
   return ACHIEVEMENTS.find((a) => a.id === id)
+}
+
+export function getAchievementProgress(
+  achievementId: string,
+  ctx: AchievementProgressContext,
+): AchievementProgress | null {
+  const safeSessions = Math.max(0, ctx.totalSessions || 0)
+  const safeStreak = Math.max(0, ctx.streakCount || 0)
+  const safeFriends = Math.max(0, ctx.friendCount || 0)
+  const levels = ctx.skillLevels || {}
+  const skills25 = Object.values(levels).filter((lv) => lv >= 25).length
+  const baseSkills = ['developer', 'designer', 'gamer', 'communicator', 'researcher', 'creator', 'learner', 'listener']
+  const skills10 = baseSkills.filter((id) => (levels[id] || 0) >= 10).length
+
+  const fixed = (current: number, target: number, suffix: string): AchievementProgress => ({
+    current: Math.min(target, current),
+    target,
+    label: `${Math.min(target, current)}/${target} ${suffix}`,
+    complete: current >= target,
+  })
+
+  switch (achievementId) {
+    case 'first_session': return fixed(safeSessions, 1, 'sessions')
+    case 'ten_sessions': return fixed(safeSessions, 10, 'sessions')
+    case 'fifty_sessions': return fixed(safeSessions, 50, 'sessions')
+    case 'streak_2': return fixed(safeStreak, 2, 'streak days')
+    case 'streak_7': return fixed(safeStreak, 7, 'streak days')
+    case 'streak_14': return fixed(safeStreak, 14, 'streak days')
+    case 'streak_30': return fixed(safeStreak, 30, 'streak days')
+    case 'first_friend': return fixed(safeFriends, 1, 'friends')
+    case 'five_friends': return fixed(safeFriends, 5, 'friends')
+    case 'social_butterfly': return fixed(safeFriends, 10, 'friends')
+    case 'skill_developer_10': return fixed(levels.developer || 0, 10, 'developer levels')
+    case 'skill_developer_50': return fixed(levels.developer || 0, 50, 'developer levels')
+    case 'skill_developer_99': return fixed(levels.developer || 0, 99, 'developer levels')
+    case 'skill_designer_10': return fixed(levels.designer || 0, 10, 'designer levels')
+    case 'skill_designer_50': return fixed(levels.designer || 0, 50, 'designer levels')
+    case 'skill_gamer_25': return fixed(levels.gamer || 0, 25, 'gamer levels')
+    case 'polymath': return fixed(skills25, 3, 'skills Lv.25+')
+    case 'jack_of_all_trades': return fixed(skills10, baseSkills.length, 'skills Lv.10+')
+    default:
+      return null
+  }
 }
 
 /** Reward label for skill milestone at this level (e.g. "Coding Intern" at Developer Lv.10), or undefined. */

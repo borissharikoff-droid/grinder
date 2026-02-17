@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
-import { FRAMES, BADGES } from '../../lib/cosmetics'
+import { BADGES } from '../../lib/cosmetics'
 import { getPersonaById } from '../../lib/persona'
 import { computeTotalSkillLevelFromLevels, normalizeSkillId, skillLevelFromXP } from '../../lib/skills'
 import { LeaderboardSkeleton } from './LeaderboardSkeleton'
+import { AvatarWithFrame } from '../shared/AvatarWithFrame'
 
 interface LeaderboardRow {
   id: string
@@ -17,6 +18,7 @@ interface LeaderboardRow {
   equipped_badges?: string[]
   equipped_frame?: string | null
   persona_id?: string | null
+  skills_sync_status?: 'synced' | 'pending'
 }
 
 const MEDALS = ['🥇', '🥈', '🥉']
@@ -95,6 +97,7 @@ export function Leaderboard() {
             equipped_badges: p.equipped_badges || [],
             equipped_frame: p.equipped_frame || null,
             persona_id: p.persona_id ?? null,
+            skills_sync_status: allSkills.length > 0 ? 'synced' : 'pending',
           }
         })
         list.sort((a, b) => b.total_skill_level - a.total_skill_level)
@@ -125,7 +128,6 @@ export function Leaderboard() {
       <div className="space-y-1.5">
         {rows.map((r, i) => {
           const isMe = r.id === user.id
-          const frame = FRAMES.find(fr => fr.id === r.equipped_frame)
           const badges = (r.equipped_badges || [])
             .map(bId => BADGES.find(b => b.id === bId))
             .filter(Boolean)
@@ -147,22 +149,15 @@ export function Leaderboard() {
               </span>
 
               {/* Avatar with frame */}
-              <div className="relative shrink-0">
-                {frame && (
-                  <div
-                    className="absolute -inset-0.5 rounded-full"
-                    style={{ background: frame.gradient, opacity: 0.6 }}
-                  />
-                )}
-                <div
-                  className={`relative w-8 h-8 rounded-full flex items-center justify-center text-sm bg-discord-darker ${
-                    frame ? 'border-[1.5px]' : 'border border-white/10'
-                  }`}
-                  style={frame ? { borderColor: frame.color } : undefined}
-                >
-                  {r.avatar_url || '🤖'}
-                </div>
-              </div>
+              <AvatarWithFrame
+                avatar={r.avatar_url || '🤖'}
+                frameId={r.equipped_frame}
+                sizeClass="w-8 h-8"
+                textClass="text-sm"
+                roundedClass="rounded-full"
+                ringInsetClass="-inset-0.5"
+                ringOpacity={0.6}
+              />
 
               {/* Name + badges */}
               <div className="flex-1 min-w-0">
@@ -171,7 +166,9 @@ export function Leaderboard() {
                     {r.username || 'Anonymous'}
                     {isMe && <span className="text-gray-500 ml-1">(you)</span>}
                   </span>
-                  <span className="text-[9px] text-gray-500 font-mono shrink-0" title="Total skill level">{r.total_skill_level}</span>
+                  <span className="text-[9px] text-gray-500 font-mono shrink-0" title="Total skill level">
+                    {r.total_skill_level}
+                  </span>
                   {persona && (
                     <span className="text-[9px] shrink-0" title={persona.label}>{persona.emoji}</span>
                   )}
@@ -192,7 +189,9 @@ export function Leaderboard() {
 
               {/* Total skill level + grind time */}
               <div className="shrink-0 text-right">
-                <p className="text-xs text-cyber-neon font-mono font-bold">{r.total_skill_level}</p>
+                <p className="text-xs text-cyber-neon font-mono font-bold">
+                  {r.total_skill_level}
+                </p>
                 <p className="text-[9px] text-gray-600 font-mono">{formatDuration(r.total_seconds)}</p>
               </div>
             </motion.div>

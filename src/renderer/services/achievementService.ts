@@ -1,17 +1,25 @@
 /**
  * AchievementService — checks for new achievements after a session,
- * unlocks cosmetics, and computes XP with streak multiplier.
+ * computes explicit rewards, and returns progression events for UI/history.
  */
 
-import { computeSessionXP, checkNewAchievements, checkSkillAchievements, getStreakMultiplier, type AchievementDef } from '../lib/xp'
+import { checkNewAchievements, checkSkillAchievements, getStreakMultiplier, type AchievementDef } from '../lib/xp'
 import { skillLevelFromXP } from '../lib/skills'
-import { unlockCosmeticsFromAchievement } from '../lib/cosmetics'
+import { appendProgressionHistory } from '../lib/progressionHistory'
+import { buildSessionCompleteEvent, makeProgressionEvent, type ProgressionEvent, type RewardGrantPayload } from '../lib/progressionContract'
+import { buildRewardEvent, grantAchievementCosmetics, grantRewardPayloads, mapAchievementToRewardPayloads } from './rewardGrant'
+import { getEquippedBadges, getEquippedFrame } from '../lib/cosmetics'
+import { syncAchievementsToSupabase, syncCosmeticsToSupabase, syncSkillXpEventsToSupabase } from './supabaseSync'
+import { publishSocialFeedEvent } from './socialFeed'
+import { CHEST_DEFS, estimateChestDropRate } from '../lib/loot'
+import { useNotificationStore } from '../stores/notificationStore'
+import { ensureInventoryHydrated, useInventoryStore } from '../stores/inventoryStore'
 
 export interface AchievementResult {
-  totalXP: number
   streakMultiplier: number
-  sessionXPEarned: number
+  sessionSkillXPEarned: number
   newAchievements: { id: string; def: AchievementDef }[]
+  progressionEvents: ProgressionEvent[]
 }
 
 /**
@@ -33,24 +41,37 @@ export async function processAchievementsElectron(
   const session = sessionRow as { duration_seconds: number; start_time: number } | null
   const acts = (activitiesRows || []) as { category: string | null; start_time: number; end_time: number }[]
 
-  if (!session || !api.db.getLocalStat || !api.db.setLocalStat || !api.db.unlockAchievement) {
+  if (!session || !api.db.unlockAchievement) {
     return null
   }
 
-  // Compute XP with streak multiplier
-  const saved = await api.db.getLocalStat('total_xp')
-  let totalXP = parseInt(saved || '0', 10) || 0
-  const baseXP = computeSessionXP(session.duration_seconds, acts)
+  // Build canonical session-complete progression event
+  const nonIdleCategories = acts
+    .map((a) => a.category || 'other')
+    .filter((category) => category !== 'idle')
+  const sessionEvent = buildSessionCompleteEvent(nonIdleCategories, session.duration_seconds, streak, {
+    applyStreakToSkillXp: false,
+  })
+
   const streakMult = getStreakMultiplier(streak)
-  const sessionXP = Math.round(baseXP * streakMult)
-  totalXP += sessionXP
+  const sessionSkillXP = Object.values(sessionEvent.skillXpDelta).reduce((sum, xp) => sum + xp, 0)
+  const progressionEvents: ProgressionEvent[] = [
+    makeProgressionEvent({
+      ...sessionEvent,
+      title: 'Session complete',
+      description: `Base progression from ${session.duration_seconds}s`,
+    }),
+  ]
 
   // Check session-based achievements
   const newAchievementList = checkNewAchievements(session, acts, streak, userStats.totalSessions, unlocked)
+  const rewardPayloads: RewardGrantPayload[] = []
+  const syncedAchievementIds: string[] = []
   for (const { id, def } of newAchievementList) {
     api.db.unlockAchievement(id)
-    totalXP += def.xpReward
-    unlockCosmeticsFromAchievement(id)
+    syncedAchievementIds.push(id)
+    rewardPayloads.push(...mapAchievementToRewardPayloads(def))
+    grantAchievementCosmetics(id)
   }
 
   // Check skill-based achievements
@@ -64,19 +85,89 @@ export async function processAchievementsElectron(
     const skillAch = checkSkillAchievements(skillLevels, updatedUnlocked)
     for (const { id, def } of skillAch) {
       api.db.unlockAchievement(id)
-      totalXP += def.xpReward
-      unlockCosmeticsFromAchievement(id)
+      syncedAchievementIds.push(id)
+      rewardPayloads.push(...mapAchievementToRewardPayloads(def))
+      grantAchievementCosmetics(id)
     }
     newAchievementList.push(...skillAch)
   }
 
-  // Persist total XP
-  api.db.setLocalStat('total_xp', String(totalXP))
+  const immediateSkillRewards = rewardPayloads.filter((p) => p.destination === 'skill')
+  if (immediateSkillRewards.length > 0) {
+    await grantRewardPayloads(immediateSkillRewards, api)
+  }
+  for (const payload of rewardPayloads) {
+    // Global XP destination is deprecated; keep payload for compatibility visuals only.
+    if (payload.destination === 'global') continue
+  }
+
+  const categoryCounts = new Map<string, number>()
+  for (const category of nonIdleCategories) {
+    categoryCounts.set(category, (categoryCounts.get(category) ?? 0) + 1)
+  }
+  const topCategory = Array.from(categoryCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
+  ensureInventoryHydrated()
+  const chestType = topCategory === 'coding' ? 'rare_chest' : 'common_chest'
+  const estimated = estimateChestDropRate(chestType, { source: 'session_complete', focusCategory: topCategory })
+  useInventoryStore.getState().addChest(chestType, 'session_complete', estimated)
+  const chest = CHEST_DEFS[chestType]
+  if (chest) {
+    useNotificationStore.getState().push({
+      type: 'progression',
+      icon: chest.icon,
+      title: `Session drop: ${chest.name}`,
+      body: `Sent to Inbox • drop rate ~${estimated}%`,
+    })
+  }
+
+  for (const ach of newAchievementList) {
+    const rewards = mapAchievementToRewardPayloads(ach.def)
+    const rewardEvent = buildRewardEvent({
+      reasonCode: 'achievement_unlock',
+      sourceCategory: ach.def.category,
+      sourceSkill: ach.def.category === 'skill' ? ach.def.reward?.value : undefined,
+      globalXpDelta: rewards
+        .filter((r) => r.destination === 'global')
+        .reduce((sum, r) => sum + (r.amount ?? 0), 0),
+      skillXpDelta: rewards
+        .filter((r) => r.destination === 'skill')
+        .reduce<Record<string, number>>((acc, r) => {
+          if (!r.skillId || !r.amount) return acc
+          acc[r.skillId] = (acc[r.skillId] ?? 0) + r.amount
+          return acc
+        }, {}),
+      rewards,
+      title: `Achievement: ${ach.def.name}`,
+      description: ach.def.description,
+    })
+    progressionEvents.push(rewardEvent)
+    publishSocialFeedEvent('achievement_unlocked', {
+      achievementId: ach.id,
+      achievementName: ach.def.name,
+      category: ach.def.category,
+    }, { dedupeKey: `achievement:${ach.id}` }).catch(() => {})
+  }
+
+  for (const event of progressionEvents) appendProgressionHistory(event)
+
+  // Best-effort cloud sync for achievements + cosmetics
+  if (syncedAchievementIds.length > 0) {
+    syncAchievementsToSupabase(Array.from(new Set(syncedAchievementIds))).catch(() => {})
+  }
+  syncSkillXpEventsToSupabase(
+    Object.entries(sessionEvent.skillXpDelta).map(([skillId, xpDelta]) => ({
+      skillId,
+      xpDelta,
+      source: 'session_complete',
+      happenedAt: new Date().toISOString(),
+    })),
+  ).catch(() => {})
+  syncCosmeticsToSupabase(getEquippedBadges(), getEquippedFrame()).catch(() => {})
 
   return {
-    totalXP,
     streakMultiplier: streakMult,
-    sessionXPEarned: sessionXP,
+    sessionSkillXPEarned: sessionSkillXP,
     newAchievements: newAchievementList,
+    progressionEvents,
   }
 }

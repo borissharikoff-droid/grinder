@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAlertStore } from '../../stores/alertStore'
 import { playAchievementSound, playClickSound } from '../../lib/sounds'
+import { MOTION } from '../../lib/motion'
 
 const AUTO_DISMISS_MS = 12000
 
@@ -36,9 +37,9 @@ export function LootDrop() {
     return () => clearInterval(interval)
   }, [alertId, dismissCurrent])
 
-  const handleClaim = () => {
+  const handleClaim = async () => {
     playClickSound()
-    claimCurrent()
+    await claimCurrent()
     setShowReward(true)
   }
 
@@ -59,12 +60,12 @@ export function LootDrop() {
           onClick={handleDone}
         >
           <motion.div
-            initial={{ scale: 0.6, opacity: 0, y: 30 }}
+            initial={{ scale: 0.7, opacity: 0, y: MOTION.entry.prominent.y }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.6, opacity: 0, y: 30 }}
-            transition={{ type: 'spring', damping: 18, stiffness: 250 }}
+            exit={{ scale: 0.7, opacity: 0, y: MOTION.entry.prominent.y }}
+            transition={MOTION.spring.pop}
             onClick={(e) => e.stopPropagation()}
-            className="w-[280px] rounded-2xl bg-discord-card border border-cyber-neon/30 shadow-[0_0_40px_rgba(0,255,136,0.2)] overflow-hidden"
+            className="w-[280px] rounded-2xl bg-discord-card border border-cyber-neon/30 shadow-glow-xl overflow-hidden"
           >
             {/* Header glow */}
             <div className="relative bg-gradient-to-b from-cyber-neon/10 to-transparent px-6 pt-6 pb-4 text-center">
@@ -73,7 +74,7 @@ export function LootDrop() {
               <motion.div
                 initial={{ scale: 0, rotate: -20 }}
                 animate={{ scale: 1, rotate: 0 }}
-                transition={{ delay: 0.15, type: 'spring', stiffness: 200 }}
+                transition={{ ...MOTION.spring.soft, delay: 0.15 }}
                 className="relative text-5xl mb-3"
               >
                 {currentAlert.achievement.icon}
@@ -107,18 +108,18 @@ export function LootDrop() {
               </motion.p>
             </div>
 
-            {/* Content — fixed height so button stays in same position */}
-            <div className="px-6 pt-1 pb-4 h-[120px] flex flex-col">
+            {/* Content — adaptive min height to avoid clipping reward text */}
+            <div className="px-6 pt-1 pb-4 min-h-[138px] flex flex-col">
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5 }}
+                transition={{ delay: 0.5, duration: MOTION.duration.base, ease: MOTION.easing }}
                 className="flex items-center justify-center mb-2 shrink-0"
               >
                 <span className="text-cyber-neon font-mono text-sm font-bold">+{currentAlert.achievement.xpReward} XP</span>
               </motion.div>
 
-              <div className="flex-1 min-h-0 flex items-center justify-center overflow-hidden">
+              <div className="flex-1 flex items-center justify-center">
                 {currentAlert.achievement.reward && !showReward && (
                   <motion.div
                     initial={{ opacity: 0 }}
@@ -129,7 +130,7 @@ export function LootDrop() {
                     <div className="flex items-center justify-center gap-2">
                       <motion.span
                         animate={{ rotate: [0, 10, -10, 0] }}
-                        transition={{ repeat: Infinity, duration: 2 }}
+                      transition={{ repeat: Infinity, duration: 2, ease: MOTION.easing }}
                         className="text-xl"
                       >
                         🎁
@@ -143,20 +144,24 @@ export function LootDrop() {
                   <motion.div
                     initial={{ scale: 0.5, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
-                    transition={{ type: 'spring', stiffness: 200 }}
-                    className="w-full rounded-xl bg-gradient-to-b from-cyber-neon/10 to-discord-darker/80 border border-cyber-neon/20 p-3 text-center"
+                    transition={MOTION.spring.soft}
+                    className="w-full rounded-xl bg-gradient-to-b from-cyber-neon/10 to-discord-darker/80 border border-cyber-neon/20 px-3 py-2.5 text-center"
                   >
                     <motion.div
                       initial={{ scale: 0 }}
                       animate={{ scale: [0, 1.3, 1] }}
-                      transition={{ duration: 0.5 }}
+                      transition={{ duration: MOTION.duration.slow, ease: MOTION.easing }}
                       className="text-3xl mb-1"
                     >
                       {currentAlert.achievement.reward.value}
                     </motion.div>
-                    <p className="text-white text-xs font-medium">{currentAlert.achievement.reward.label}</p>
-                    <p className="text-gray-500 text-[10px] mt-0.5 font-mono">
-                      {currentAlert.achievement.reward.type === 'avatar' ? 'now in Settings → avatar' : 'equipped'}
+                    <p className="text-white text-xs font-medium leading-tight">{currentAlert.achievement.reward.label}</p>
+                    <p className="text-gray-500 text-[10px] mt-0.5 leading-tight">
+                      {currentAlert.achievement.reward.type === 'avatar'
+                        ? 'Now in Settings -> Avatar'
+                        : currentAlert.achievement.reward.type === 'skill_boost'
+                          ? 'Applied instantly to your skill XP'
+                          : 'Unlocked'}
                     </p>
                   </motion.div>
                 )}
@@ -165,19 +170,19 @@ export function LootDrop() {
               </div>
             </div>
 
-            {/* Action bar — button always in same position */}
-            <div className="px-6 pb-5 pt-0 h-[44px] flex items-center">
+            {/* Action bar */}
+            <div className="px-6 pb-5 pt-0 min-h-[44px] flex items-center">
               {currentAlert.achievement.reward && !showReward ? (
                 <button
                   onClick={handleClaim}
-                  className="w-full py-2.5 rounded-xl bg-cyber-neon text-discord-darker font-bold text-sm active:scale-95 transition-all hover:shadow-glow"
+                  className="w-full py-2.5 rounded-xl bg-cyber-neon text-discord-darker font-bold text-sm transition-all hover:shadow-glow"
                 >
                   CLAIM
                 </button>
               ) : (
                 <button
                   onClick={handleDone}
-                  className="w-full py-2.5 rounded-xl bg-cyber-neon/15 border border-cyber-neon/30 text-cyber-neon text-xs font-bold active:scale-95 transition-all hover:bg-cyber-neon/25"
+                  className="w-full py-2.5 rounded-xl bg-cyber-neon/15 border border-cyber-neon/30 text-cyber-neon text-xs font-bold transition-all hover:bg-cyber-neon/25"
                 >
                   ✓ nice
                 </button>

@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { ACHIEVEMENTS, levelFromTotalXP, xpProgressInLevel } from '../../lib/xp'
+import { ACHIEVEMENTS, getAchievementProgress, type AchievementProgressContext } from '../../lib/xp'
 import type { AchievementDef } from '../../lib/xp'
 import { useAlertStore } from '../../stores/alertStore'
+import { computeTotalSkillLevel, MAX_TOTAL_SKILL_LEVEL, skillLevelFromXP } from '../../lib/skills'
 import { playClickSound } from '../../lib/sounds'
+import { supabase } from '../../lib/supabase'
+import { useAuthStore } from '../../stores/authStore'
+import { trackMetric } from '../../services/rolloutMetrics'
 
 const CATEGORY_LABELS: Record<string, string> = {
   grind: '⚡ Grind',
@@ -14,26 +18,67 @@ const CATEGORY_LABELS: Record<string, string> = {
 }
 
 export function AchievementsPage() {
-  const [totalXP, setTotalXP] = useState(0)
+  const { user } = useAuthStore()
+  const [totalSkillLevel, setTotalSkillLevel] = useState(0)
   const [unlockedIds, setUnlockedIds] = useState<string[]>([])
   const [claimedIds, setClaimedIds] = useState<string[]>([])
+  const [progressCtx, setProgressCtx] = useState<AchievementProgressContext>({
+    totalSessions: 0,
+    streakCount: 0,
+    friendCount: 0,
+    skillLevels: {},
+  })
   const pushAlert = useAlertStore((s) => s.push)
 
   useEffect(() => {
     // Load from Electron or localStorage
     const api = window.electronAPI
     if (api?.db) {
-      api.db.getLocalStat('total_xp').then((v) => setTotalXP(parseInt(v || '0', 10)))
+      api.db.getAllSkillXP?.().then((rows) => {
+        const safeRows = (rows || []) as { skill_id: string; total_xp: number }[]
+        setTotalSkillLevel(computeTotalSkillLevel(safeRows))
+        const levels: Record<string, number> = {}
+        for (const row of safeRows) levels[row.skill_id] = skillLevelFromXP(row.total_xp || 0)
+        setProgressCtx((prev) => ({ ...prev, skillLevels: levels }))
+      })
       api.db.getUnlockedAchievements().then(setUnlockedIds)
+      api.db.getSessionCount?.().then((count) => {
+        setProgressCtx((prev) => ({ ...prev, totalSessions: Number(count) || 0 }))
+      })
+      api.db.getStreak?.().then((count) => {
+        setProgressCtx((prev) => ({ ...prev, streakCount: Number(count) || 0 }))
+      })
     } else {
-      const xp = parseInt(localStorage.getItem('idly_total_xp') || '0', 10)
-      setTotalXP(xp)
+      const stored = JSON.parse(localStorage.getItem('idly_skill_xp') || '{}') as Record<string, number>
+      const rows = Object.entries(stored).map(([skill_id, total_xp]) => ({ skill_id, total_xp }))
+      setTotalSkillLevel(computeTotalSkillLevel(rows))
+      const levels: Record<string, number> = {}
+      for (const row of rows) levels[row.skill_id] = skillLevelFromXP(row.total_xp || 0)
+      setProgressCtx((prev) => ({ ...prev, skillLevels: levels }))
       const unlocked = JSON.parse(localStorage.getItem('idly_unlocked_achievements') || '[]')
       setUnlockedIds(unlocked)
     }
     const claimed = JSON.parse(localStorage.getItem('idly_claimed_achievements') || '[]')
     setClaimedIds(claimed)
   }, [])
+
+  useEffect(() => {
+    if (!supabase || !user) return
+    let cancelled = false
+    ;(async () => {
+      const { count } = await supabase
+        .from('friendships')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'accepted')
+        .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`)
+      if (!cancelled) {
+        setProgressCtx((prev) => ({ ...prev, friendCount: count || 0 }))
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user])
 
   const handleClaim = (def: AchievementDef) => {
     playClickSound()
@@ -43,11 +88,11 @@ export function AchievementsPage() {
     localStorage.setItem('idly_claimed_achievements', JSON.stringify(updated))
     // Show loot drop
     pushAlert(def)
+    trackMetric('achievement_claimed')
   }
 
-  const level = levelFromTotalXP(totalXP)
-  const { current, needed } = xpProgressInLevel(totalXP)
-  const pct = Math.min(100, (current / needed) * 100)
+  const totalUnlocked = ACHIEVEMENTS.filter((a) => unlockedIds.includes(a.id)).length
+  const pct = Math.min(100, (totalUnlocked / ACHIEVEMENTS.length) * 100)
 
   // Group by category
   const categories = ['grind', 'streak', 'social', 'special', 'skill']
@@ -62,8 +107,8 @@ export function AchievementsPage() {
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-bold text-white">Achievements</h2>
         <div className="text-right">
-          <span className="font-mono text-cyber-neon text-sm font-bold">Lv.{level}</span>
-          <span className="text-gray-500 text-xs ml-2">{totalXP} XP</span>
+          <span className="font-mono text-cyber-neon text-sm font-bold">{totalSkillLevel}/{MAX_TOTAL_SKILL_LEVEL}</span>
+          <span className="text-gray-500 text-xs ml-2">total level</span>
         </div>
       </div>
 
@@ -94,6 +139,8 @@ export function AchievementsPage() {
                   const unlocked = unlockedIds.includes(a.id)
                   const claimed = claimedIds.includes(a.id)
                   const canClaim = unlocked && !claimed && a.reward
+                  const progress = getAchievementProgress(a.id, progressCtx)
+                  const pctProgress = progress ? Math.min(100, (progress.current / Math.max(1, progress.target)) * 100) : 0
                   return (
                     <motion.div
                       key={a.id}
@@ -116,6 +163,24 @@ export function AchievementsPage() {
                           {a.name}
                         </p>
                         <p className="text-xs text-gray-500 truncate">{a.description}</p>
+                        {progress && (
+                          <div className="mt-1.5">
+                            <div className="flex items-center justify-between text-[10px] font-mono">
+                              <span className={unlocked ? 'text-cyber-neon/70' : 'text-gray-500'}>
+                                {progress.label}
+                              </span>
+                              {progress.complete && (
+                                <span className="text-cyber-neon">done</span>
+                              )}
+                            </div>
+                            <div className="h-1 rounded-full bg-discord-darker overflow-hidden mt-1">
+                              <div
+                                className={`h-full rounded-full ${unlocked ? 'bg-cyber-neon' : 'bg-gray-500/70'}`}
+                                style={{ width: `${pctProgress}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
                         {a.reward && unlocked && claimed && (
                           <p className="text-[10px] text-cyber-neon/60 font-mono mt-0.5">
                             {a.reward.value} {a.reward.label}

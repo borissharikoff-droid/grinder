@@ -1,18 +1,55 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useSessionStore } from '../../stores/sessionStore'
 import { categoryToSkillId, getSkillById } from '../../lib/skills'
+import { MOTION } from '../../lib/motion'
 
 export function CurrentActivity() {
   const currentActivity = useSessionStore((s) => s.currentActivity)
   const sessionSkillXP = useSessionStore((s) => s.sessionSkillXP)
   const status = useSessionStore((s) => s.status)
   const [logsPath, setLogsPath] = useState<string | null>(null)
+  const [displayActivity, setDisplayActivity] = useState<typeof currentActivity>(null)
+  const [isDetecting, setIsDetecting] = useState(true)
+  const clearRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const api = typeof window !== 'undefined' ? (window as unknown as { electronAPI?: { _preloadError?: boolean; _message?: string; data?: { getLogsPath?: () => Promise<string>; openLogsFolder?: () => Promise<unknown> } } }).electronAPI : undefined
 
   useEffect(() => {
     if (!api?.data?.getLogsPath) return
     api.data.getLogsPath().then(setLogsPath).catch(() => {})
   }, [api])
+
+  useEffect(() => {
+    return () => {
+      if (clearRef.current) clearTimeout(clearRef.current)
+    }
+  }, [])
+
+  useEffect(() => {
+    const unknown = !currentActivity || currentActivity.appName === 'Unknown' || currentActivity.windowTitle === 'Searching 4 window...'
+    const detectorError = currentActivity?.appName === 'Window detector error'
+
+    if (clearRef.current) {
+      clearTimeout(clearRef.current)
+      clearRef.current = null
+    }
+
+    if (detectorError) {
+      setDisplayActivity(currentActivity)
+      setIsDetecting(false)
+      return
+    }
+
+    if (!unknown && currentActivity) {
+      setDisplayActivity(currentActivity)
+      setIsDetecting(false)
+      return
+    }
+
+    setIsDetecting(true)
+    // Keep last known good activity briefly to prevent card flicker.
+    clearRef.current = setTimeout(() => setDisplayActivity(null), 1700)
+  }, [currentActivity])
   const isPreloadError = api && '_preloadError' in api && api._preloadError
   const isBrowser = typeof window === 'undefined' || !api || (!('tracker' in api) && !isPreloadError)
 
@@ -39,53 +76,105 @@ export function CurrentActivity() {
     )
   }
 
-  const isDetectorError = currentActivity?.appName === 'Window detector error'
-  const isUnknown = !currentActivity || currentActivity.appName === 'Unknown' || currentActivity.windowTitle === 'Searching 4 window...'
+  const isDetectorError = displayActivity?.appName === 'Window detector error'
 
   const openLogs = () => api?.data?.openLogsFolder?.()
 
-  if (isDetectorError && currentActivity) {
+  if (isDetectorError && displayActivity) {
     return (
-      <div className="w-full max-w-xs rounded-xl bg-amber-950/30 border border-amber-500/30 px-4 py-3">
+      <motion.div
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: MOTION.duration.fast, ease: MOTION.easing }}
+        className="w-full max-w-xs rounded-xl bg-amber-950/30 border border-amber-500/30 px-4 py-3"
+      >
         <p className="text-amber-400 text-sm font-medium">Window detector error</p>
-        <p className="text-gray-400 text-xs mt-1 break-words">{currentActivity.windowTitle}</p>
+        <p className="text-gray-400 text-xs mt-1 break-words">{displayActivity.windowTitle}</p>
         <p className="text-gray-500 text-[11px] mt-2">Check the logs folder or try running the app as administrator.</p>
         {logsPath && <p className="text-gray-500 text-[11px] mt-1.5 font-mono truncate" title={logsPath}>{logsPath}</p>}
         {api?.data?.openLogsFolder && <button type="button" onClick={openLogs} className="mt-2 text-xs text-cyber-neon hover:underline">Open logs folder</button>}
-      </div>
+      </motion.div>
     )
   }
 
-  if (!currentActivity || isUnknown) {
+  if (!displayActivity) {
     return (
-      <div className="w-full max-w-xs rounded-xl bg-discord-card/60 border border-white/5 px-4 py-3 text-center">
-        <p className="text-gray-500 text-xs font-mono">Searching 4 window...</p>
-      </div>
+      <motion.div
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: MOTION.duration.fast, ease: MOTION.easing }}
+        className="w-full max-w-xs rounded-xl bg-discord-card/60 border border-white/5 px-4 py-3 text-center"
+      >
+        <p className="text-gray-500 text-xs font-mono">Detecting active window...</p>
+      </motion.div>
     )
   }
 
-  const skillId = categoryToSkillId(currentActivity.category)
+  const skillId = categoryToSkillId(displayActivity.category)
   const skill = getSkillById(skillId)
   const skillLabel = skill ? skill.name : 'Grinding'
   const xpThisSession = status === 'running' ? (sessionSkillXP[skillId] ?? 0) : 0
-  const title = currentActivity.windowTitle
-    ? currentActivity.windowTitle.slice(0, 35) + (currentActivity.windowTitle.length > 35 ? '...' : '')
+  const title = displayActivity.windowTitle
+    ? displayActivity.windowTitle.slice(0, 35) + (displayActivity.windowTitle.length > 35 ? '...' : '')
     : ''
+  const activityTitle = `Leveling ${skillLabel}`
+  const activitySubtitle = `${displayActivity.appName}${title ? ` · ${title}` : ''}`
 
   return (
-    <div className="w-full max-w-xs rounded-xl bg-discord-card/90 border border-cyber-neon/20 px-4 py-3 shadow-[0_0_16px_rgba(0,255,136,0.06)]">
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: MOTION.duration.fast, ease: MOTION.easing }}
+      className="w-full max-w-xs rounded-xl bg-discord-card/90 border border-cyber-neon/20 px-4 py-3 shadow-[0_0_16px_rgba(0,255,136,0.06)]"
+    >
       <div className="flex items-center gap-2.5">
         <span className="text-lg">{skill?.icon ?? '📱'}</span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-cyber-neon/95 text-sm font-medium truncate">Leveling {skillLabel}</p>
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.p
+                key={activityTitle}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.14 }}
+                className="text-cyber-neon/95 text-sm font-medium truncate"
+              >
+                {activityTitle}
+              </motion.p>
+            </AnimatePresence>
             {xpThisSession > 0 && (
               <span className="text-[11px] font-mono text-gray-400">+{xpThisSession} XP</span>
             )}
+            <AnimatePresence>
+              {isDetecting && (
+                <motion.span
+                  key="detecting-pill"
+                  initial={{ opacity: 0, scale: 0.96 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.96 }}
+                  transition={{ duration: MOTION.duration.fast, ease: MOTION.easing }}
+                  className="text-[9px] px-1.5 py-0.5 rounded-full border border-white/10 text-gray-400 bg-white/[0.03]"
+                >
+                  updating...
+                </motion.span>
+              )}
+            </AnimatePresence>
           </div>
-          <p className="text-gray-400 text-xs truncate">{currentActivity.appName}{title ? ` · ${title}` : ''}</p>
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.p
+              key={activitySubtitle}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.14 }}
+              className="text-gray-400 text-xs truncate"
+            >
+              {activitySubtitle}
+            </motion.p>
+          </AnimatePresence>
         </div>
       </div>
-    </div>
+    </motion.div>
   )
 }

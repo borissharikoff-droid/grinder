@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
 
 interface DailyTotal {
@@ -19,18 +19,20 @@ function formatDuration(seconds: number): string {
 
 function getDayLabel(dateStr: string): string {
   const d = new Date(dateStr + 'T12:00:00')
-  return d.toLocaleDateString(undefined, { weekday: 'short' })
+  return d.toLocaleDateString('en-US', { weekday: 'short' })
 }
 
 function getShortDate(dateStr: string): string {
   const d = new Date(dateStr + 'T12:00:00')
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 export function TrendsChart() {
   const [range, setRange] = useState<TrendRange>('7d')
   const [data, setData] = useState<DailyTotal[]>([])
   const [loading, setLoading] = useState(true)
+  const [barTooltip, setBarTooltip] = useState<{ item: DailyTotal; x: number } | null>(null)
+  const barsWrapRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     loadData()
@@ -153,14 +155,40 @@ export function TrendsChart() {
         </div>
 
         {/* Bar chart */}
-        <div className="flex items-end gap-[2px] h-20">
+        <div ref={barsWrapRef} className="relative">
+          {barTooltip && (
+            <div
+              className="absolute -top-11 z-20 -translate-x-1/2 pointer-events-none rounded-md border border-cyber-neon/30 bg-discord-dark/95 px-2 py-1 shadow-lg"
+              style={{ left: `${barTooltip.x}px` }}
+            >
+              <p className="text-[10px] text-cyber-neon font-mono whitespace-nowrap">
+                {getShortDate(barTooltip.item.date)} · {formatDuration(barTooltip.item.total_seconds)} · {barTooltip.item.sessions_count} sessions
+              </p>
+            </div>
+          )}
+          <div className="flex items-end gap-0.5 h-20">
           {filledData.map((d, i) => {
             const pct = (d.total_seconds / maxSeconds) * 100
             return (
               <div
                 key={d.date}
-                className="flex-1 flex flex-col items-center group relative"
+                className="flex-1 h-full flex items-end group relative"
                 title={`${getShortDate(d.date)}: ${formatDuration(d.total_seconds)} (${d.sessions_count} sessions)`}
+                onMouseEnter={(e) => {
+                  const wrapRect = barsWrapRef.current?.getBoundingClientRect()
+                  const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
+                  const rawX = rect.left - (wrapRect?.left ?? rect.left) + rect.width / 2
+                  const maxX = (barsWrapRef.current?.clientWidth ?? rawX) - 12
+                  setBarTooltip({ item: d, x: Math.max(12, Math.min(maxX, rawX)) })
+                }}
+                onMouseMove={(e) => {
+                  const wrapRect = barsWrapRef.current?.getBoundingClientRect()
+                  const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
+                  const rawX = rect.left - (wrapRect?.left ?? rect.left) + rect.width / 2
+                  const maxX = (barsWrapRef.current?.clientWidth ?? rawX) - 12
+                  setBarTooltip({ item: d, x: Math.max(12, Math.min(maxX, rawX)) })
+                }}
+                onMouseLeave={() => setBarTooltip(null)}
               >
                 <motion.div
                   initial={{ height: 0 }}
@@ -173,6 +201,7 @@ export function TrendsChart() {
               </div>
             )
           })}
+          </div>
         </div>
         <div className="flex justify-between mt-1">
           {range === '7d' ? (
@@ -192,9 +221,9 @@ export function TrendsChart() {
       {/* Contribution Heatmap */}
       <div className="rounded-xl bg-discord-card/80 border border-white/10 p-3">
         <p className="text-[10px] uppercase tracking-wider text-gray-500 font-mono mb-2">Grind Heatmap (90 days)</p>
-        <div className="flex gap-[2px]">
+        <div className="flex gap-0.5">
           {weeks.map((week, wi) => (
-            <div key={wi} className="flex flex-col gap-[2px] flex-1">
+            <div key={wi} className="flex flex-col gap-0.5 flex-1">
               {week.map((day) => (
                 <div
                   key={day.date}

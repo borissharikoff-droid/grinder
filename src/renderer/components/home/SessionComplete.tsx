@@ -5,11 +5,12 @@ import { useAlertStore } from '../../stores/alertStore'
 import { ConfettiEffect } from '../animations/ConfettiEffect'
 import { playClickSound } from '../../lib/sounds'
 import { getSkillById } from '../../lib/skills'
+import { MOTION } from '../../lib/motion'
 
 const AUTO_DISMISS_MS = 12000
 
 export function SessionComplete() {
-  const { lastSessionSummary, skillXPGains, streakMultiplier, sessionXPEarned, sessionRewards, liveXP, dismissComplete } = useSessionStore()
+  const { lastSessionSummary, skillXPGains, streakMultiplier, sessionSkillXPEarned, sessionRewards, progressionEvents, dismissComplete } = useSessionStore()
   const hasLootOpen = useAlertStore((s) => s.currentAlert !== null)
   const [progress, setProgress] = useState(100)
   const elapsedRef = useRef(0)
@@ -41,7 +42,7 @@ export function SessionComplete() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        transition={{ duration: 0.25 }}
+        transition={{ duration: MOTION.duration.base, ease: MOTION.easing }}
         className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
         onClick={handleDismiss}
       >
@@ -49,11 +50,11 @@ export function SessionComplete() {
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.95, opacity: 0 }}
-          transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+          transition={{ duration: MOTION.duration.base, ease: MOTION.easing }}
           onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-[280px] rounded-2xl bg-discord-card border border-cyber-neon/30 shadow-glow overflow-hidden"
+          className="w-full max-w-[300px] max-h-[82vh] rounded-2xl bg-discord-card border border-cyber-neon/30 shadow-glow overflow-hidden flex flex-col"
         >
-          <div className="px-5 pt-5 pb-3 text-center">
+          <div className="px-5 pt-5 pb-3 text-center overflow-y-auto overflow-x-hidden">
             <div className="text-3xl mb-2">🎉</div>
             <h3 className="text-base font-bold text-cyber-neon mb-0.5">GG, grind complete!</h3>
             {lastSessionSummary && (
@@ -62,19 +63,19 @@ export function SessionComplete() {
               </p>
             )}
 
-            {/* Streak bonus + XP earned */}
-            {(sessionXPEarned > 0 || liveXP > 0) && (
+            {/* Streak bonus + skill XP earned */}
+            {sessionSkillXPEarned > 0 && (
               <div className="flex flex-col items-center gap-1 mt-1">
                 <div className="flex items-center justify-center gap-2">
-                  <span className="text-xs font-mono text-cyber-neon">+{sessionXPEarned || liveXP} XP</span>
+                  <span className="text-xs font-mono text-cyber-neon">+{sessionSkillXPEarned} skill XP</span>
                   {streakMultiplier > 1 && (
                     <motion.span
                       initial={{ scale: 0 }}
                       animate={{ scale: 1 }}
-                      transition={{ delay: 0.3, type: 'spring', stiffness: 300 }}
+                      transition={{ ...MOTION.spring.pop, delay: 0.3 }}
                       className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30"
                     >
-                      🔥 x{streakMultiplier} streak
+                      🔥 x{streakMultiplier} streak bonus
                     </motion.span>
                   )}
                 </div>
@@ -86,7 +87,7 @@ export function SessionComplete() {
               <motion.div
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5 }}
+                transition={{ delay: 0.5, duration: MOTION.duration.base, ease: MOTION.easing }}
                 className="mt-2 flex flex-wrap justify-center gap-1"
               >
                 {sessionRewards.map((reward, i) => (
@@ -111,12 +112,13 @@ export function SessionComplete() {
                       key={g.skillId}
                       initial={{ opacity: 0, x: -6 }}
                       animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: MOTION.duration.base, ease: MOTION.easing }}
                       className={`rounded-lg px-2.5 py-2 border ${leveledUp ? 'bg-cyber-neon/10 border-cyber-neon/40 shadow-[0_0_12px_rgba(0,255,136,0.2)]' : 'bg-discord-dark/50 border-white/10'}`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-lg">{skill.icon}</span>
                         <span className="text-white text-xs font-medium truncate flex-1">{skill.name}</span>
-                        <span className="text-cyber-neon text-xs font-mono shrink-0">+{g.xp} XP</span>
+                        <span className="text-cyber-neon text-xs font-mono shrink-0">+{g.xp} Skill XP</span>
                       </div>
                       {leveledUp && (
                         <p className="text-[10px] text-cyber-neon font-mono mt-0.5">
@@ -125,7 +127,7 @@ export function SessionComplete() {
                       )}
                       <div className="h-1 rounded-full bg-discord-darker overflow-hidden mt-1.5">
                         <div
-                          className="h-full rounded-full transition-all duration-300"
+                          className="h-full rounded-full transition-all"
                           style={{ width: '100%', backgroundColor: skill.color }}
                         />
                       </div>
@@ -135,9 +137,28 @@ export function SessionComplete() {
               </div>
             )}
 
+            {progressionEvents.length > 0 && (
+              <div className="mt-3 text-left">
+                <p className="text-[10px] uppercase tracking-wider text-gray-500 font-mono mb-1">Why Skill XP changed</p>
+                <div className="space-y-1.5 max-h-28 overflow-y-auto overflow-x-hidden pr-1">
+                  {progressionEvents.slice(0, 4).map((event) => (
+                    <div key={event.id} className="rounded-lg border border-white/10 bg-discord-dark/50 px-2 py-1.5">
+                      <p className="text-[10px] text-white">{event.title}</p>
+                      <p className="text-[9px] text-gray-500">{event.description}</p>
+                      <p className="text-[9px] text-cyber-neon font-mono">
+                        {Object.keys(event.skillXpDelta).length > 0
+                          ? Object.entries(event.skillXpDelta).map(([k, v]) => `${k}+${v}`).join(', ')
+                          : 'No skill XP delta'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <button
               onClick={handleDismiss}
-              className="mt-4 px-6 py-2 rounded-xl bg-cyber-neon/15 border border-cyber-neon/30 text-cyber-neon text-xs font-bold active:scale-95 transition-all hover:bg-cyber-neon/25"
+              className="mt-4 px-6 py-2 rounded-xl bg-cyber-neon/15 border border-cyber-neon/30 text-cyber-neon text-xs font-bold transition-all hover:bg-cyber-neon/25"
             >
               ✓ nice
             </button>

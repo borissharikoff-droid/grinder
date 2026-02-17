@@ -54,6 +54,12 @@ const CH = {
     deleteTask: 'db:deleteTask',
     clearDoneTasks: 'db:clearDoneTasks',
     getDailyTotals: 'db:getDailyTotals',
+    getSessionsPage: 'db:getSessionsPage',
+    getDistractionMetrics: 'db:getDistractionMetrics',
+    getFocusBlocks: 'db:getFocusBlocks',
+    getSiteUsageStats: 'db:getSiteUsageStats',
+    getCategoryTrends: 'db:getCategoryTrends',
+    getPeriodComparison: 'db:getPeriodComparison',
     addSkillXPLog: 'db:addSkillXPLog',
     getSkillXPHistory: 'db:getSkillXPHistory',
     saveCheckpoint: 'db:saveCheckpoint',
@@ -63,12 +69,13 @@ const CH = {
   ai: {
     analyzeSession: 'ai:analyzeSession',
     analyzeOverview: 'ai:analyzeOverview',
+    refineActivityLabels: 'ai:refineActivityLabels',
   },
   settings: {
     getAutoLaunch: 'settings:getAutoLaunch',
     setAutoLaunch: 'settings:setAutoLaunch',
   },
-  notify: { show: 'notify:show' },
+  notify: { show: 'notify:show', smart: 'notification:smart' },
   window: { flashFrame: 'window:flashFrame', setBadgeCount: 'window:setBadgeCount' },
   data: { exportSessions: 'data:exportSessions', getLogsPath: 'data:getLogsPath', openLogsFolder: 'data:openLogsFolder' },
   updater: { status: 'updater:status', install: 'updater:install' },
@@ -137,9 +144,22 @@ try {
       deleteTask: (id: string) => ipcRenderer.invoke(CH.db.deleteTask, id),
       clearDoneTasks: () => ipcRenderer.invoke(CH.db.clearDoneTasks),
       getDailyTotals: (days: number) => ipcRenderer.invoke(CH.db.getDailyTotals, days),
+      getSessionsPage: (limit?: number, offset?: number, sinceMs?: number) => ipcRenderer.invoke(CH.db.getSessionsPage, limit, offset, sinceMs),
+      getDistractionMetrics: (sinceMs?: number) => ipcRenderer.invoke(CH.db.getDistractionMetrics, sinceMs),
+      getFocusBlocks: (sinceMs?: number, minMinutes?: number) => ipcRenderer.invoke(CH.db.getFocusBlocks, sinceMs, minMinutes),
+      getSiteUsageStats: (sinceMs?: number) => ipcRenderer.invoke(CH.db.getSiteUsageStats, sinceMs),
+      getCategoryTrends: (days?: number) => ipcRenderer.invoke(CH.db.getCategoryTrends, days),
+      getPeriodComparison: (currentSinceMs: number, currentUntilMs: number, previousSinceMs: number, previousUntilMs: number) =>
+        ipcRenderer.invoke(CH.db.getPeriodComparison, currentSinceMs, currentUntilMs, previousSinceMs, previousUntilMs),
       addSkillXPLog: (skillId: string, xpDelta: number) => ipcRenderer.invoke(CH.db.addSkillXPLog, skillId, xpDelta),
       getSkillXPHistory: (skillId: string) => ipcRenderer.invoke(CH.db.getSkillXPHistory, skillId),
-      saveCheckpoint: (data: { sessionId: string; startTime: number; elapsedSeconds: number; pausedAccumulated: number }) =>
+      saveCheckpoint: (data: {
+        sessionId: string
+        startTime: number
+        elapsedSeconds: number
+        pausedAccumulated: number
+        sessionSkillXP?: Record<string, number>
+      }) =>
         ipcRenderer.invoke(CH.db.saveCheckpoint, data),
       getCheckpoint: () => ipcRenderer.invoke(CH.db.getCheckpoint),
       clearCheckpoint: () => ipcRenderer.invoke(CH.db.clearCheckpoint),
@@ -147,12 +167,21 @@ try {
     ai: {
       analyzeSession: (sessionId: string) => ipcRenderer.invoke(CH.ai.analyzeSession, sessionId),
       analyzeOverview: (data: unknown) => ipcRenderer.invoke(CH.ai.analyzeOverview, data),
+      refineActivityLabels: (items: { app_name: string; window_title: string; current_category: string }[]) =>
+        ipcRenderer.invoke(CH.ai.refineActivityLabels, items),
     },
     settings: {
       getAutoLaunch: () => ipcRenderer.invoke(CH.settings.getAutoLaunch),
       setAutoLaunch: (enabled: boolean) => ipcRenderer.invoke(CH.settings.setAutoLaunch, enabled),
     },
-    notify: { show: (title: string, body: string) => ipcRenderer.invoke(CH.notify.show, title, body) },
+    notify: {
+      show: (title: string, body: string) => ipcRenderer.invoke(CH.notify.show, title, body),
+      onSmart: (cb: (payload: { title: string; body: string }) => void) => {
+        const handler = (_: unknown, payload: { title: string; body: string }) => cb(payload)
+        ipcRenderer.on(CH.notify.smart, handler)
+        return () => ipcRenderer.removeListener(CH.notify.smart, handler)
+      },
+    },
     window: {
       flashFrame: () => ipcRenderer.invoke(CH.window.flashFrame),
       setBadgeCount: (count: number) => ipcRenderer.invoke(CH.window.setBadgeCount, count),
